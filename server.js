@@ -15,8 +15,6 @@ const REFERRAL_BONUS = 20;
 const PROFIT_DAY_PCT = 0.01;       // 1% daily profit cap
 const LOSS_DAY_PCT = -0.005;       // 0.5% loss day (rare)
 const HARD_CAP_MULTIPLIER = 1.4;   // brief excursion up to 1.4x target before strong mean reversion
-const PLATFORM_DEPOSIT_ADDRESS = 'TGW6jgbjv2o1H1HgJSX9rXVKFYyFBbCWSu';
-const PLATFORM_NETWORK = 'TRC-20';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
 const DB_DIR = path.dirname(DB_PATH);
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(DB_DIR, 'backups');
@@ -308,8 +306,6 @@ app.get('/api/me', authRequired, (req, res) => {
   if (!user) return res.status(404).json({ error: 'not found' });
   res.json({
     user: publicUser(user),
-    deposit_address: PLATFORM_DEPOSIT_ADDRESS,
-    network: PLATFORM_NETWORK,
     usdt_price: getUsdtPrice(),
   });
 });

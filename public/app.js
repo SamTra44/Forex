@@ -390,9 +390,6 @@ async function loadDashboard() {
     // Withdrawal panel
     renderWithdrawal(wdStatus, u);
 
-    // Deposit address (platform-wide) + QR
-    renderDepositAddress(me.deposit_address, u);
-
     // Live trades feed
     renderBotTrades(trades.trades);
 
@@ -623,23 +620,8 @@ function initNetworkPanel() {
   networkState.logTimer = setInterval(tickLog, 1100);
 }
 
-// ---------- Deposit address ----------
+// ---------- Deposit notifications (admin-credited) ----------
 let lastDepositTxId = 0;
-
-function renderDepositAddress(addr, user) {
-  if (!addr) addr = '--';
-  $('deposit-address').textContent = addr;
-  const refEl = $('deposit-reference');
-  if (refEl && user) refEl.textContent = `USER-${user.id} · ${user.email}`;
-  if (addr && addr !== '--') {
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&data=${encodeURIComponent(addr)}`;
-    const img = $('deposit-qr');
-    if (img.dataset.addr !== addr) {
-      img.src = qrUrl;
-      img.dataset.addr = addr;
-    }
-  }
-}
 
 // Detect new deposit transactions and toast
 function notifyDepositArrivals(transactions) {
@@ -923,17 +905,6 @@ document.addEventListener('click', async (e) => {
     } catch { toast('Copy failed', 'error'); }
     return;
   }
-  if (e.target && e.target.id === 'btn-copy-deposit') {
-    const addr = $('deposit-address').textContent;
-    try {
-      await navigator.clipboard.writeText(addr);
-      toast('Address copied', 'success');
-    } catch { toast('Copy failed', 'error'); }
-  }
-  if (e.target && e.target.id === 'btn-check-deposit') {
-    toast('Scanning blockchain... no new transactions yet', 'info');
-    loadDashboard();
-  }
   if (e.target && e.target.id === 'btn-save-wallet') {
     const wallet = $('wallet-input').value.trim();
     if (!wallet) return toast('Enter a wallet address', 'error');
@@ -962,23 +933,6 @@ document.addEventListener('submit', async (e) => {
     } catch (err) {
       toast(err.message, 'error');
     }
-  }
-});
-
-// Deposit
-$('form-deposit').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  try {
-    await API.req('/api/me/deposit', {
-      method: 'POST',
-      body: JSON.stringify({ amount: Number(fd.get('amount')) }),
-    });
-    e.target.reset();
-    toast('Deposit successful', 'success');
-    loadDashboard();
-  } catch (err) {
-    toast(err.message, 'error');
   }
 });
 
