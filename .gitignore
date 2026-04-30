@@ -3,6 +3,9 @@ data.db
 data.db-journal
 data.db-wal
 data.db-shm
+data.db.pre-restore.bak
+restore.pending.db
+backups/
 .env
 .env.local
 *.log

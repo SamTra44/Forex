@@ -1088,7 +1088,10 @@ function switchAdminTab(tab) {
   });
   $('admin-tab-users').classList.toggle('hidden', tab !== 'users');
   $('admin-tab-withdrawals').classList.toggle('hidden', tab !== 'withdrawals');
+  const bkPane = $('admin-tab-backup');
+  if (bkPane) bkPane.classList.toggle('hidden', tab !== 'backup');
   if (tab === 'withdrawals') loadWithdrawals();
+  if (tab === 'backup') loadBackups();
 }
 
 document.querySelectorAll('.admin-tab').forEach(b => {
@@ -1314,6 +1317,147 @@ $('form-credit').addEventListener('submit', async (e) => {
     loadAdmin();
   } catch (err) {
     toast(err.message, 'error');
+  }
+});
+
+// ---------- Admin · Backup & Migration ----------
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+async function loadBackups() {
+  try {
+    const data = await API.req('/api/admin/backup/list');
+    $('bk-db-size').textContent = fmtBytes(data.db_size);
+    $('bk-db-path').textContent = data.db_path || '—';
+    $('bk-dir').textContent = data.backup_dir || '—';
+    $('bk-retention').textContent = data.retention || 7;
+    $('bk-count').textContent = data.snapshots.length;
+    const pendingEl = $('bk-pending');
+    if (data.pending_restore) {
+      pendingEl.textContent = 'Staged';
+      pendingEl.className = 'text-2xl font-bold text-yellow-400';
+    } else {
+      pendingEl.textContent = 'None';
+      pendingEl.className = 'text-2xl font-bold text-gray-300';
+    }
+    const tbody = $('tbody-bk-snaps');
+    tbody.innerHTML = '';
+    if (!data.snapshots.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-8 text-sm">No snapshots yet — click "Snapshot to volume" to create one.</td></tr>`;
+      return;
+    }
+    data.snapshots.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-line hover:bg-bg/40';
+      tr.innerHTML = `
+        <td class="px-5 py-3 font-mono text-xs text-gray-300 break-all">${escapeHtml(s.name)}</td>
+        <td class="px-5 py-3 text-right font-mono text-accent">${fmtBytes(s.size)}</td>
+        <td class="px-5 py-3 text-muted text-xs">${fmtDate(s.mtime.replace('T', ' ').slice(0, 19))}</td>
+        <td class="px-5 py-3 pr-5 text-right whitespace-nowrap">
+          <button data-name="${escapeHtml(s.name)}" class="btn-bk-del text-xs px-2.5 py-1.5 bg-danger/10 text-danger border border-danger/30 rounded hover:bg-danger/20 transition">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.btn-bk-del').forEach(b => {
+      b.addEventListener('click', async () => {
+        if (!confirm(`Delete snapshot ${b.dataset.name}? This can't be undone.`)) return;
+        try {
+          await API.req('/api/admin/backup/' + encodeURIComponent(b.dataset.name), { method: 'DELETE' });
+          toast('Snapshot deleted', 'success');
+          loadBackups();
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    });
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function downloadBackup() {
+  try {
+    const t = API.token();
+    const res = await fetch('/api/admin/backup/download', { headers: { Authorization: 'Bearer ' + t } });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'download failed');
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || '';
+    const m = cd.match(/filename="([^"]+)"/);
+    const name = m ? m[1] : `quantedge-backup-${Date.now()}.db`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    toast('Backup downloaded', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function snapshotNow() {
+  try {
+    const data = await API.req('/api/admin/backup/snapshot', { method: 'POST' });
+    toast(`Snapshot saved: ${data.name}`, 'success');
+    loadBackups();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function uploadRestore(file) {
+  const t = API.token();
+  const buf = await file.arrayBuffer();
+  const res = await fetch('/api/admin/backup/restore', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + t,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: buf,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'upload failed');
+  return data;
+}
+
+// Wire backup buttons (delegated so they work after DOM is built)
+document.addEventListener('click', (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'btn-bk-download') downloadBackup();
+  if (e.target.id === 'btn-bk-snapshot') snapshotNow();
+  if (e.target.id === 'btn-bk-refresh') loadBackups();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'bk-confirm') {
+    const btn = $('btn-bk-restore');
+    if (btn) btn.disabled = !e.target.checked;
+  }
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target && e.target.id === 'form-bk-restore') {
+    e.preventDefault();
+    const file = $('bk-file').files[0];
+    if (!file) return toast('Pick a .db file first', 'error');
+    if (!$('bk-confirm').checked) return toast('Confirm the warning checkbox first', 'error');
+    try {
+      const data = await uploadRestore(file);
+      const result = $('bk-restore-result');
+      result.classList.remove('hidden');
+      result.textContent = `✓ Staged ${fmtBytes(data.size)} — restart the server to apply.`;
+      toast('Restore staged · restart to apply', 'success');
+      loadBackups();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 });
 

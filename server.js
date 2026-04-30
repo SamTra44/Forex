@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 const express = require('express');
@@ -17,6 +18,45 @@ const HARD_CAP_MULTIPLIER = 1.4;   // brief excursion up to 1.4x target before s
 const PLATFORM_DEPOSIT_ADDRESS = 'TGW6jgbjv2o1H1HgJSX9rXVKFYyFBbCWSu';
 const PLATFORM_NETWORK = 'TRC-20';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
+const DB_DIR = path.dirname(DB_PATH);
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(DB_DIR, 'backups');
+const RESTORE_STAGING = path.join(DB_DIR, 'restore.pending.db');
+const PRE_RESTORE_BAK = DB_PATH + '.pre-restore.bak';
+const BACKUP_RETENTION = Number(process.env.BACKUP_RETENTION || 7);
+const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
+
+// Make sure dirs exist before opening the DB
+try { fs.mkdirSync(DB_DIR, { recursive: true }); } catch {}
+try { fs.mkdirSync(BACKUP_DIR, { recursive: true }); } catch {}
+
+// If a previous /restore upload was staged, swap it in BEFORE opening the DB.
+// Validates the SQLite magic header so a bad upload can never replace data silently.
+function applyPendingRestore() {
+  if (!fs.existsSync(RESTORE_STAGING)) return;
+  let header;
+  try {
+    const fd = fs.openSync(RESTORE_STAGING, 'r');
+    header = Buffer.alloc(16);
+    fs.readSync(fd, header, 0, 16, 0);
+    fs.closeSync(fd);
+  } catch (err) {
+    console.warn('[restore] could not read staged file:', err.message);
+    return;
+  }
+  if (header.toString('utf8', 0, 15) !== 'SQLite format 3') {
+    console.warn('[restore] staged file is not a valid SQLite db — discarding');
+    try { fs.unlinkSync(RESTORE_STAGING); } catch {}
+    return;
+  }
+  try {
+    if (fs.existsSync(DB_PATH)) fs.copyFileSync(DB_PATH, PRE_RESTORE_BAK);
+    fs.renameSync(RESTORE_STAGING, DB_PATH);
+    console.log('[restore] applied staged restore from upload — previous DB saved as', PRE_RESTORE_BAK);
+  } catch (err) {
+    console.error('[restore] failed to apply staged file:', err.message);
+  }
+}
+applyPendingRestore();
 const USDT_PRICE_REFRESH_MS = 60_000;
 const USDT_PRICE_FALLBACK = 1.00;
 const USDT_MIN_TRADE = 1;          // minimum USD amount for buy/sell
@@ -787,6 +827,139 @@ app.get('/api/usdt/lookup', authRequired, (req, res) => {
     address: u.usdt_address,
     is_self: u.id === req.user.id,
   });
+});
+
+// ---------- Admin · Backup & Migration ----------
+// Hot, consistent SQLite snapshot. VACUUM INTO produces a checkpointed copy
+// even while the bot is mid-write — safe to download and restore elsewhere.
+function makeSnapshot(targetPath) {
+  if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
+  const escaped = targetPath.replace(/'/g, "''");
+  db.exec(`VACUUM INTO '${escaped}'`);
+}
+
+function listSnapshots() {
+  try {
+    return fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.endsWith('.db'))
+      .map(f => {
+        const p = path.join(BACKUP_DIR, f);
+        const st = fs.statSync(p);
+        return { name: f, size: st.size, mtime: st.mtime.toISOString() };
+      })
+      .sort((a, b) => b.mtime.localeCompare(a.mtime));
+  } catch {
+    return [];
+  }
+}
+
+function rotateSnapshots() {
+  const snaps = listSnapshots();
+  // Keep the newest BACKUP_RETENTION; only auto-rotate files we created (snapshot- prefix)
+  const auto = snaps.filter(s => s.name.startsWith('snapshot-'));
+  for (const old of auto.slice(BACKUP_RETENTION)) {
+    try { fs.unlinkSync(path.join(BACKUP_DIR, old.name)); } catch {}
+  }
+}
+
+function autoSnapshotFilename() {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  return `snapshot-${ts}.db`;
+}
+
+function takeAutoSnapshot() {
+  const name = autoSnapshotFilename();
+  const target = path.join(BACKUP_DIR, name);
+  try {
+    makeSnapshot(target);
+    rotateSnapshots();
+    console.log('[backup] daily snapshot created:', name);
+    return name;
+  } catch (err) {
+    console.error('[backup] snapshot failed:', err.message);
+    return null;
+  }
+}
+
+// Take one immediately on boot if no snapshot exists yet, then daily.
+if (listSnapshots().length === 0) takeAutoSnapshot();
+setInterval(takeAutoSnapshot, BACKUP_INTERVAL_MS);
+
+// Live download — generates a fresh hot snapshot, streams it, deletes the temp.
+app.get('/api/admin/backup/download', authRequired, adminRequired, (req, res) => {
+  const tmp = path.join(BACKUP_DIR, `download-${Date.now()}.tmp.db`);
+  try {
+    makeSnapshot(tmp);
+  } catch (err) {
+    return res.status(500).json({ error: 'snapshot failed: ' + err.message });
+  }
+  const stat = fs.statSync(tmp);
+  const filename = `quantedge-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', stat.size);
+  const stream = fs.createReadStream(tmp);
+  stream.pipe(res);
+  stream.on('close', () => { try { fs.unlinkSync(tmp); } catch {} });
+  stream.on('error', () => { try { fs.unlinkSync(tmp); } catch {} });
+});
+
+// Save a snapshot to disk on demand (manual checkpoint before risky operations).
+app.post('/api/admin/backup/snapshot', authRequired, adminRequired, (req, res) => {
+  const name = takeAutoSnapshot();
+  if (!name) return res.status(500).json({ error: 'snapshot failed' });
+  res.json({ ok: true, name });
+});
+
+// List snapshots on disk + DB stats.
+app.get('/api/admin/backup/list', authRequired, adminRequired, (req, res) => {
+  let dbSize = 0;
+  try { dbSize = fs.statSync(DB_PATH).size; } catch {}
+  res.json({
+    db_path: DB_PATH,
+    db_size: dbSize,
+    backup_dir: BACKUP_DIR,
+    retention: BACKUP_RETENTION,
+    pending_restore: fs.existsSync(RESTORE_STAGING),
+    snapshots: listSnapshots(),
+  });
+});
+
+// Restore: upload .db file as raw octet-stream. We DON'T swap the live DB at runtime
+// (lock-prone, risky). Instead the file is staged and applied on next server restart.
+app.post('/api/admin/backup/restore',
+  authRequired, adminRequired,
+  express.raw({ type: 'application/octet-stream', limit: '200mb' }),
+  (req, res) => {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || buf.length < 100) {
+      return res.status(400).json({ error: 'no file received' });
+    }
+    if (buf.toString('utf8', 0, 15) !== 'SQLite format 3') {
+      return res.status(400).json({ error: 'not a valid SQLite database file' });
+    }
+    try {
+      fs.writeFileSync(RESTORE_STAGING, buf);
+    } catch (err) {
+      return res.status(500).json({ error: 'write failed: ' + err.message });
+    }
+    res.json({
+      ok: true,
+      staged: RESTORE_STAGING,
+      size: buf.length,
+      note: 'Restart the server to apply. The previous DB will be saved as ' + path.basename(PRE_RESTORE_BAK),
+    });
+  }
+);
+
+// Delete a specific snapshot file (only inside BACKUP_DIR, only .db).
+app.delete('/api/admin/backup/:name', authRequired, adminRequired, (req, res) => {
+  const name = path.basename(String(req.params.name));
+  if (!name.endsWith('.db')) return res.status(400).json({ error: 'invalid name' });
+  const p = path.join(BACKUP_DIR, name);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'not found' });
+  try { fs.unlinkSync(p); } catch (err) { return res.status(500).json({ error: err.message }); }
+  res.json({ ok: true });
 });
 
 // ---------- Bot (algo trading simulator) ----------

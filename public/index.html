@@ -638,12 +638,13 @@
     <h1 class="text-2xl font-semibold mb-6">Admin Console</h1>
 
     <!-- Admin tabs -->
-    <div class="flex gap-1 mb-6 border-b border-line">
+    <div class="flex gap-1 mb-6 border-b border-line flex-wrap">
       <button data-admin-tab="users" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-accent text-accent">Users</button>
       <button data-admin-tab="withdrawals" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition flex items-center gap-1.5">
         Withdrawal Requests
         <span id="wd-pending-badge" class="hidden text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded font-mono">0</span>
       </button>
+      <button data-admin-tab="backup" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Backup &amp; Migration</button>
     </div>
 
     <!-- Tab: Users -->
@@ -785,6 +786,85 @@
       </div>
     </div>
     <!-- /Tab: Withdrawals -->
+
+    <!-- Tab: Backup & Migration -->
+    <div id="admin-tab-backup" class="hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div class="bg-card border border-line rounded-xl p-5">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Live Database Size</div>
+          <div class="text-2xl font-bold text-accent" id="bk-db-size">—</div>
+          <div class="text-[11px] text-muted mt-1 font-mono break-all" id="bk-db-path">—</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-5">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Snapshots on Disk</div>
+          <div class="text-2xl font-bold text-accent2" id="bk-count">0</div>
+          <div class="text-[11px] text-muted mt-1">Auto-rotated · keep last <span id="bk-retention">7</span></div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-5">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Pending Restore</div>
+          <div class="text-2xl font-bold" id="bk-pending">None</div>
+          <div class="text-[11px] text-muted mt-1">Applied on next server restart</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <!-- Download / snapshot -->
+        <div class="bg-card border border-line rounded-xl p-5">
+          <h3 class="font-semibold mb-1">Download Backup</h3>
+          <p class="text-xs text-muted mb-4">Get a hot, consistent SQLite copy you can store anywhere or move to another host.</p>
+          <div class="flex flex-wrap gap-2">
+            <button id="btn-bk-download" class="bg-accent hover:bg-accent/90 text-bg font-semibold px-4 py-2.5 rounded-lg text-sm transition">Download .db file</button>
+            <button id="btn-bk-snapshot" class="bg-accent2 hover:bg-accent2/90 text-white font-semibold px-4 py-2.5 rounded-lg text-sm transition">Snapshot to volume</button>
+            <button id="btn-bk-refresh" class="bg-bg border border-line text-gray-300 px-4 py-2.5 rounded-lg text-sm hover:border-accent transition">Refresh</button>
+          </div>
+          <div class="mt-4 bg-bg/60 border border-yellow-500/20 rounded-lg p-3 text-[11px] leading-relaxed text-gray-300">
+            <span class="text-yellow-400 font-semibold uppercase tracking-wider">Migration in 3 steps:</span>
+            <ol class="list-decimal list-inside mt-1 space-y-0.5">
+              <li>Click <span class="text-accent">Download .db file</span> to save the current state.</li>
+              <li>On the new server, set <code class="text-accent">DB_PATH</code> and place the file at that path BEFORE starting.</li>
+              <li>Or upload it on the new server using <span class="text-accent">Restore from file</span> below, then restart.</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Restore -->
+        <div class="bg-card border border-line rounded-xl p-5">
+          <h3 class="font-semibold mb-1">Restore from File</h3>
+          <p class="text-xs text-muted mb-4">Stages a backup file. Apply on next server restart — the previous DB is auto-saved as <code class="text-yellow-400">.pre-restore.bak</code>.</p>
+          <form id="form-bk-restore" class="space-y-3">
+            <input type="file" id="bk-file" accept=".db,application/octet-stream" required class="block w-full text-xs text-gray-300 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-accent file:text-bg file:text-xs file:font-semibold hover:file:bg-accent/90" />
+            <label class="flex items-start gap-2 text-[11px] text-gray-300">
+              <input type="checkbox" id="bk-confirm" class="mt-0.5" />
+              <span>I understand this REPLACES all current users, balances, and transactions on next restart.</span>
+            </label>
+            <button type="submit" id="btn-bk-restore" class="w-full bg-danger hover:bg-danger/90 text-white font-semibold py-2.5 rounded-lg text-sm transition disabled:bg-line disabled:cursor-not-allowed" disabled>Stage Restore</button>
+          </form>
+          <p id="bk-restore-result" class="hidden mt-3 text-[11px] text-accent"></p>
+        </div>
+      </div>
+
+      <!-- Snapshot list -->
+      <div class="bg-card border border-line rounded-xl">
+        <div class="px-5 py-4 border-b border-line">
+          <h3 class="font-semibold">Snapshots on Volume</h3>
+          <p class="text-[11px] text-muted mt-1 font-mono break-all" id="bk-dir">—</p>
+        </div>
+        <div class="overflow-x-auto scrollable">
+          <table class="w-full text-sm">
+            <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+              <tr>
+                <th class="text-left px-5 py-3">File</th>
+                <th class="text-right px-5 py-3">Size</th>
+                <th class="text-left px-5 py-3">Created</th>
+                <th class="text-right px-5 py-3 pr-5">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-bk-snaps"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- /Tab: Backup & Migration -->
   </main>
 </div>
 
