@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QuantEdge — Algo Trading Platform</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          bg: '#0a0e17',
+          panel: '#111827',
+          card: '#161e2e',
+          line: '#1f2937',
+          accent: '#22d3a7',
+          accent2: '#3b82f6',
+          danger: '#ef4444',
+          muted: '#6b7280',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0a0e17; color: #e5e7eb; }
+  .glow { box-shadow: 0 0 40px rgba(34,211,167,0.08); }
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(31,41,55,0.4) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(31,41,55,0.4) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .gradient-text { background: linear-gradient(90deg, #22d3a7, #3b82f6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .scrollable::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollable::-webkit-scrollbar-track { background: #0a0e17; }
+  .scrollable::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 4px; }
+  .pulse-dot { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .tab-active { color: #22d3a7; border-color: #22d3a7; }
+  .toast-enter { animation: slideIn 0.3s ease-out; }
+  @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
+</style>
+</head>
+<body>
+
+<!-- Toasts -->
+<div id="toasts" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+<!-- Auth view -->
+<div id="view-auth" class="min-h-screen grid-bg flex items-center justify-center px-4">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center gap-2 mb-3">
+        <svg class="w-9 h-9 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
+        </svg>
+        <span class="text-3xl font-bold gradient-text">QuantEdge</span>
+      </div>
+      <p class="text-muted text-sm">Professional algorithmic trading platform</p>
+    </div>
+
+    <div class="bg-card border border-line rounded-xl p-7 glow">
+      <div class="flex border-b border-line mb-6">
+        <button data-tab="login" class="auth-tab flex-1 py-2.5 border-b-2 border-accent text-accent font-medium text-sm">Sign In</button>
+        <button data-tab="signup" class="auth-tab flex-1 py-2.5 border-b-2 border-transparent text-muted hover:text-gray-300 font-medium text-sm">Create Account</button>
+      </div>
+
+      <!-- Login form -->
+      <form id="form-login" class="space-y-4">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Email</label>
+          <input type="email" name="email" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="you@example.com" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Password</label>
+          <input type="password" name="password" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="••••••••" />
+        </div>
+        <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Sign In</button>
+      </form>
+
+      <!-- Signup form -->
+      <form id="form-signup" class="space-y-4 hidden">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Full Name</label>
+          <input type="text" name="name" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="John Doe" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Email</label>
+          <input type="email" name="email" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="you@example.com" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Password</label>
+          <input type="password" name="password" required minlength="6" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="Min 6 characters" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Referral Code <span class="text-muted/60 normal-case">(optional · earn $20)</span></label>
+          <input type="text" name="referralCode" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent uppercase" placeholder="ABC12345" />
+        </div>
+        <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Create Account</button>
+      </form>
+    </div>
+
+    <p class="text-center text-xs text-muted mt-6">
+      Local platform · Sign in with your account
+    </p>
+  </div>
+</div>
+
+<!-- Dashboard view -->
+<div id="view-dashboard" class="hidden min-h-screen">
+  <header class="border-b border-line bg-panel/60 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg class="w-6 h-6 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
+        </svg>
+        <span class="text-lg font-bold gradient-text">QuantEdge</span>
+        <span class="ml-2 px-2 py-0.5 text-[10px] uppercase tracking-wider bg-accent/10 text-accent rounded">Live</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <span id="user-name-pill" class="text-sm text-gray-300"></span>
+        <button id="btn-logout" class="text-sm text-muted hover:text-danger transition">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-6">
+    <!-- Greeting + Top stats -->
+    <div class="flex items-end justify-between mb-6 flex-wrap gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold">Welcome back, <span id="greet-name" class="text-accent"></span></h1>
+        <p class="text-sm text-muted mt-1">Algorithmic trading dashboard</p>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="w-2 h-2 rounded-full bg-accent pulse-dot"></span>
+        <span class="text-muted">Markets open · Live feed</span>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Account Balance</div>
+        <div class="text-2xl font-bold">$<span id="stat-balance">0.00</span></div>
+        <div class="text-[11px] text-muted mt-1">Available USD</div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">USDT Wallet</div>
+        <div class="text-2xl font-bold text-accent"><span id="stat-usdt">0.000000</span></div>
+        <div class="text-[11px] text-muted mt-1">≈ $<span id="stat-usdt-usd">0.00</span> · <span id="stat-usdt-price">$1.0000</span></div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Today's P&amp;L</div>
+        <div class="text-2xl font-bold" id="stat-pnl-wrap"><span id="stat-pnl-sign">+</span>$<span id="stat-pnl">0.00</span></div>
+        <div class="text-[11px] text-muted mt-1"><span id="stat-trades-count">0</span> bot trades</div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Referrals</div>
+        <div class="text-2xl font-bold text-accent2"><span id="stat-referrals">0</span></div>
+        <div class="text-[11px] text-muted mt-1">$<span id="stat-ref-earnings">0.00</span> earned</div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Bot Status</div>
+        <div class="text-2xl font-bold" id="bot-status-text">Idle</div>
+        <div class="text-[11px] text-muted mt-1" id="bot-status-sub">Not running</div>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+      <a href="#deposit-section" class="bg-card hover:bg-card/80 border border-accent2/30 rounded-xl px-5 py-3.5 flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-accent2/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-accent2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          </div>
+          <div>
+            <div class="font-semibold text-sm">Deposit</div>
+            <div class="text-[11px] text-muted">USDT · TRC-20</div>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-muted group-hover:text-accent2 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </a>
+      <a href="#usdt-wallet-section" class="bg-card hover:bg-card/80 border border-yellow-400/30 rounded-xl px-5 py-3.5 flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-yellow-400/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H7"/></svg>
+          </div>
+          <div>
+            <div class="font-semibold text-sm">USDT Wallet</div>
+            <div class="text-[11px] text-muted">Buy · Sell · Send</div>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-muted group-hover:text-yellow-400 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </a>
+      <a href="#withdraw-section" class="bg-card hover:bg-card/80 border border-accent/30 rounded-xl px-5 py-3.5 flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center">
+            <svg class="w-5 h-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </div>
+          <div>
+            <div class="font-semibold text-sm">Withdraw</div>
+            <div class="text-[11px] text-muted">10% daily limit</div>
+          </div>
+        </div>
+        <svg class="w-4 h-4 text-muted group-hover:text-accent transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </a>
+    </div>
+
+    <!-- Trading panel -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <!-- Chart -->
+      <div class="lg:col-span-2 bg-card border border-line rounded-xl">
+        <div class="px-5 py-3 border-b border-line flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-3">
+            <select id="chart-symbol-select" class="bg-bg border border-line rounded-lg px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus:border-accent">
+              <option value="btcusdt">BTC/USDT</option>
+              <option value="ethusdt">ETH/USDT</option>
+              <option value="solusdt">SOL/USDT</option>
+              <option value="bnbusdt">BNB/USDT</option>
+              <option value="xrpusdt">XRP/USDT</option>
+              <option value="dogeusdt">DOGE/USDT</option>
+              <option value="adausdt">ADA/USDT</option>
+              <option value="avaxusdt">AVAX/USDT</option>
+              <option value="linkusdt">LINK/USDT</option>
+              <option value="maticusdt">MATIC/USDT</option>
+            </select>
+            <span id="chart-price" class="font-mono text-lg">--</span>
+            <span id="chart-change" class="text-xs px-2 py-0.5 rounded bg-line text-muted">--</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-muted">
+            <select id="chart-interval-select" class="bg-bg border border-line rounded px-2 py-1 text-xs focus:outline-none">
+              <option value="1m">1m</option>
+              <option value="5m" selected>5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+            </select>
+            <span class="w-1 h-1 rounded-full bg-accent pulse-dot"></span>
+            <span>Binance · Live</span>
+          </div>
+        </div>
+        <div id="chart-container" style="height: 360px;"></div>
+      </div>
+
+      <!-- Bot panel -->
+      <div class="bg-card border border-line rounded-xl flex flex-col">
+        <div class="px-5 py-3 border-b border-line flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h3 class="font-semibold">Algo Bot</h3>
+            <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
+          </div>
+          <span id="bot-led" class="text-[10px] px-2 py-0.5 uppercase tracking-wider rounded bg-accent/10 text-accent">Active 24/7</span>
+        </div>
+        <div class="p-5 space-y-4">
+          <div class="bg-bg border border-line rounded-lg p-3">
+            <div class="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted mb-2">
+              <span>Today's Mode</span>
+              <span id="bot-mode-badge" class="px-1.5 py-0.5 rounded text-[10px]">--</span>
+            </div>
+            <div class="flex items-baseline justify-between">
+              <span class="text-xs text-gray-400">Target</span>
+              <span id="bot-target" class="font-mono text-sm">--</span>
+            </div>
+            <div class="flex items-baseline justify-between mt-1">
+              <span class="text-xs text-gray-400">Realized</span>
+              <span id="bot-realized" class="font-mono text-sm">--</span>
+            </div>
+            <div class="mt-2 h-1.5 bg-line rounded-full overflow-hidden">
+              <div id="bot-target-bar" class="h-full transition-all" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="text-[11px] text-muted leading-relaxed">
+            Always-on multi-strategy bot · 12 venues · No manual stop · Risk-managed
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-bg border border-line rounded-lg p-2.5">
+              <div class="text-[10px] uppercase tracking-wider text-muted">Wins</div>
+              <div class="text-base font-bold text-accent" id="bot-wins">0</div>
+            </div>
+            <div class="bg-bg border border-line rounded-lg p-2.5">
+              <div class="text-[10px] uppercase tracking-wider text-muted">Losses</div>
+              <div class="text-base font-bold text-danger" id="bot-losses">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quantum Network panel (hacker style) -->
+    <div class="bg-card border border-line rounded-xl mb-6 overflow-hidden">
+      <div class="px-5 py-3 border-b border-line flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center gap-3">
+          <span class="font-semibold tracking-wide">QUANTUM NETWORK</span>
+          <span class="text-[10px] px-2 py-0.5 uppercase tracking-wider rounded bg-accent/10 text-accent flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-dot"></span>
+            Encrypted · 7 hops
+          </span>
+        </div>
+        <div class="flex items-center gap-4 text-[11px] font-mono text-muted">
+          <span>EXIT: <span id="net-exit-flag" class="text-gray-200">🇮🇸</span> <span id="net-exit-ip" class="text-accent">--</span></span>
+          <span>LAT: <span id="net-latency" class="text-accent">--</span>ms</span>
+          <span>TX: <span id="net-throughput" class="text-accent2">--</span> KB/s</span>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-0">
+        <!-- Routing nodes -->
+        <div class="lg:col-span-2 p-4 border-b lg:border-b-0 lg:border-r border-line">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-3">Active Nodes · Onion Routing</div>
+          <div id="net-nodes" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+        </div>
+        <!-- Terminal log feed -->
+        <div class="p-4">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-2 flex items-center justify-between">
+            <span>./bot --trace</span>
+            <span class="text-accent">● live</span>
+          </div>
+          <div id="net-log" class="font-mono text-[10.5px] leading-snug text-gray-400 h-[180px] overflow-hidden bg-bg border border-line rounded p-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- USDT Wallet -->
+    <div id="usdt-wallet-section" class="bg-card border border-line rounded-xl mb-6 overflow-hidden">
+      <div class="px-5 py-3 border-b border-line flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-lg bg-yellow-400/10 flex items-center justify-center">
+            <span class="text-yellow-400 text-sm font-bold">₮</span>
+          </div>
+          <span class="font-semibold tracking-wide">USDT WALLET</span>
+          <span class="text-[10px] px-2 py-0.5 uppercase tracking-wider rounded bg-yellow-400/10 text-yellow-400 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-yellow-400 pulse-dot"></span>
+            Live price
+          </span>
+        </div>
+        <div class="flex items-center gap-3 text-[11px] font-mono text-muted">
+          <span>USDT/USD: <span id="usdt-live-price" class="text-yellow-400">$1.0000</span></span>
+          <span>Source: <span id="usdt-price-source" class="text-gray-300">CoinGecko</span></span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-0">
+        <!-- Left: Balance + Action tabs -->
+        <div class="lg:col-span-2 p-5 border-b lg:border-b-0 lg:border-r border-line">
+          <!-- Balance summary -->
+          <div class="bg-bg border border-line rounded-lg p-4 mb-4">
+            <div class="flex items-end justify-between flex-wrap gap-3">
+              <div>
+                <div class="text-[10px] uppercase tracking-wider text-muted mb-1">USDT Balance</div>
+                <div class="text-3xl font-bold text-yellow-400 font-mono"><span id="usdt-balance-big">0.000000</span> <span class="text-base text-muted">USDT</span></div>
+                <div class="text-xs text-gray-400 mt-1">≈ $<span id="usdt-balance-usd">0.00</span> USD</div>
+              </div>
+              <div class="text-right">
+                <div class="text-[10px] uppercase tracking-wider text-muted mb-1">USD Available</div>
+                <div class="text-xl font-semibold">$<span id="usdt-usd-balance">0.00</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action tabs -->
+          <div class="flex gap-1 mb-4 border-b border-line">
+            <button data-usdt-tab="buy" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-accent text-accent">Buy</button>
+            <button data-usdt-tab="sell" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Sell</button>
+            <button data-usdt-tab="send" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Send (internal)</button>
+            <button data-usdt-tab="withdraw" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">External Withdraw</button>
+          </div>
+
+          <!-- Buy tab -->
+          <div id="usdt-pane-buy" class="usdt-pane">
+            <p class="text-xs text-muted mb-3">Convert your USD balance into USDT instantly at the live rate.</p>
+            <form id="form-usdt-buy" class="space-y-3">
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">USD Amount</label>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
+                  <input type="number" name="usd_amount" min="1" step="0.01" required placeholder="100.00" class="usdt-buy-usd w-full bg-bg border border-line rounded-lg pl-7 pr-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+                </div>
+              </div>
+              <div class="bg-bg/60 border border-line rounded-lg p-3 text-xs">
+                <div class="flex justify-between"><span class="text-muted">You pay</span><span class="font-mono">$<span id="usdt-buy-pay">0.00</span></span></div>
+                <div class="flex justify-between mt-1"><span class="text-muted">Rate</span><span class="font-mono">$<span id="usdt-buy-rate">1.0000</span></span></div>
+                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">You receive</span><span class="font-mono text-yellow-400 font-semibold"><span id="usdt-buy-receive">0.000000</span> USDT</span></div>
+              </div>
+              <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Buy USDT</button>
+            </form>
+          </div>
+
+          <!-- Sell tab -->
+          <div id="usdt-pane-sell" class="usdt-pane hidden">
+            <p class="text-xs text-muted mb-3">Sell your USDT and credit your USD balance instantly.</p>
+            <form id="form-usdt-sell" class="space-y-3">
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1 flex justify-between"><span>USDT Amount</span><button type="button" id="btn-usdt-sell-max" class="text-[10px] text-accent hover:underline normal-case tracking-normal">Max</button></label>
+                <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="usdt-sell-usdt w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+              </div>
+              <div class="bg-bg/60 border border-line rounded-lg p-3 text-xs">
+                <div class="flex justify-between"><span class="text-muted">You sell</span><span class="font-mono"><span id="usdt-sell-sell">0.000000</span> USDT</span></div>
+                <div class="flex justify-between mt-1"><span class="text-muted">Rate</span><span class="font-mono">$<span id="usdt-sell-rate">1.0000</span></span></div>
+                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">You receive</span><span class="font-mono text-accent font-semibold">$<span id="usdt-sell-receive">0.00</span></span></div>
+              </div>
+              <button type="submit" class="w-full bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2.5 rounded-lg text-sm transition">Sell USDT</button>
+            </form>
+          </div>
+
+          <!-- Send (internal) tab -->
+          <div id="usdt-pane-send" class="usdt-pane hidden">
+            <p class="text-xs text-muted mb-3">Send USDT to another QuantEdge user instantly. Internal transfers are free and confirm in seconds.</p>
+            <form id="form-usdt-send" class="space-y-3">
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Recipient USDT Address</label>
+                <input type="text" name="to_address" required placeholder="TQ..." class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" id="usdt-send-addr" />
+                <p id="usdt-send-lookup" class="hidden mt-1.5 text-[11px]"></p>
+              </div>
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1 flex justify-between"><span>Amount</span><button type="button" id="btn-usdt-send-max" class="text-[10px] text-accent hover:underline normal-case tracking-normal">Max</button></label>
+                <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+              </div>
+              <div class="bg-bg/60 border border-yellow-400/20 rounded-lg p-2.5 text-[11px] text-gray-300">
+                <span class="text-yellow-400 font-semibold">Instant · 0% fee</span> — internal-only transfer between QuantEdge wallets.
+              </div>
+              <button type="submit" class="w-full bg-yellow-400 hover:bg-yellow-400/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Send USDT</button>
+            </form>
+          </div>
+
+          <!-- External withdraw tab -->
+          <div id="usdt-pane-withdraw" class="usdt-pane hidden">
+            <p class="text-xs text-muted mb-3">Send USDT to an external on-chain wallet. Processed within <span class="text-yellow-400 font-semibold">24 hours</span>.</p>
+            <form id="form-usdt-withdraw" class="space-y-3">
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Network</label>
+                <select name="network" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-accent">
+                  <option value="TRC-20">Tron (TRC-20) — recommended</option>
+                  <option value="ERC-20">Ethereum (ERC-20)</option>
+                  <option value="BEP-20">BNB Smart Chain (BEP-20)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">External Wallet Address</label>
+                <input type="text" name="to_address" required placeholder="External USDT wallet" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1 flex justify-between"><span>Amount</span><button type="button" id="btn-usdt-wd-max" class="text-[10px] text-accent hover:underline normal-case tracking-normal">Max</button></label>
+                <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="usdt-wd-amt w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+              </div>
+              <div class="bg-bg/60 border border-line rounded-lg p-3 text-xs">
+                <div class="flex justify-between"><span class="text-muted">Amount</span><span class="font-mono"><span id="usdt-wd-req">0.000000</span> USDT</span></div>
+                <div class="flex justify-between mt-1"><span class="text-muted">Network fee (1%)</span><span class="font-mono text-orange-400"><span id="usdt-wd-fee">0.000000</span> USDT</span></div>
+                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">Recipient gets</span><span class="font-mono text-accent font-semibold"><span id="usdt-wd-net">0.000000</span> USDT</span></div>
+              </div>
+              <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Request Withdrawal</button>
+              <p class="text-[10px] text-muted text-center">Pending withdrawals are processed manually within 24 hrs. You can cancel? No — but it can be rejected & refunded by support.</p>
+            </form>
+          </div>
+        </div>
+
+        <!-- Right: Internal address card -->
+        <div class="p-5">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-3">Your USDT Address</div>
+          <div class="bg-bg border border-line rounded-lg p-3 mb-3 text-center">
+            <img id="usdt-qr" alt="QR" class="w-32 h-32 mx-auto rounded bg-white p-1.5" />
+          </div>
+          <code id="usdt-address" class="block text-[11px] font-mono text-yellow-400 break-all leading-snug bg-bg border border-line rounded-lg px-2.5 py-2 mb-2">--</code>
+          <button id="btn-copy-usdt-addr" class="w-full text-xs px-3 py-2 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 rounded hover:bg-yellow-400/20 transition">Copy address</button>
+          <div class="mt-3 bg-bg/60 border border-line rounded-lg p-2.5 text-[11px] text-gray-300 leading-snug">
+            Other QuantEdge users can send you USDT to this address — <span class="text-yellow-400">instant</span>, no fees. Do not share with external wallets.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live trades feed + Deposit/Referral -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+      <div class="lg:col-span-2 bg-card border border-line rounded-xl">
+        <div class="px-5 py-3 border-b border-line flex items-center justify-between">
+          <h3 class="font-semibold">Live Trade Feed</h3>
+          <span class="text-[10px] uppercase tracking-wider text-muted">Bot executions</span>
+        </div>
+        <div class="overflow-x-auto scrollable max-h-72">
+          <table class="w-full text-sm">
+            <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted sticky top-0">
+              <tr>
+                <th class="text-left px-5 py-2.5">Time</th>
+                <th class="text-left px-5 py-2.5">Side</th>
+                <th class="text-left px-5 py-2.5">Symbol</th>
+                <th class="text-left px-5 py-2.5">Status</th>
+                <th class="text-right px-5 py-2.5">P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-bot-trades"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div id="deposit-section" class="bg-card border border-line rounded-xl p-5">
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="font-semibold">Deposit USDT</h3>
+            <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 bg-accent2/10 text-accent2 rounded">TRC-20</span>
+          </div>
+          <p class="text-xs text-muted mb-3">Send USDT (TRC-20) to the address below. Balance updates after on-chain confirmation.</p>
+
+          <div class="bg-bg border border-line rounded-lg p-3 flex items-center gap-3">
+            <img id="deposit-qr" alt="QR" class="w-20 h-20 rounded bg-white p-1" />
+            <div class="flex-1 min-w-0">
+              <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Platform Deposit Address</div>
+              <code id="deposit-address" class="block text-[11px] font-mono text-accent break-all leading-snug">--</code>
+              <div class="flex gap-2 mt-2">
+                <button id="btn-copy-deposit" class="text-[10px] px-2 py-1 bg-bg border border-line rounded hover:border-accent transition">Copy</button>
+                <button id="btn-check-deposit" class="text-[10px] px-2 py-1 bg-accent/10 border border-accent/30 text-accent rounded hover:bg-accent/20 transition">Check for deposit</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-bg/60 border border-yellow-500/20 rounded-lg p-2.5 mt-3">
+            <div class="text-[10px] uppercase tracking-wider text-yellow-400 mb-1">Important · Reference</div>
+            <p class="text-[11px] text-gray-300 leading-snug">
+              After sending, share your TXID with support along with your reference:
+            </p>
+            <code id="deposit-reference" class="block mt-1 text-[11px] font-mono text-accent break-all">--</code>
+          </div>
+
+          <p class="text-[11px] text-muted mt-3 leading-relaxed">
+            <span class="text-gray-400">Network:</span> Tron (TRC-20) ·
+            <span class="text-gray-400">Min:</span> $10 ·
+            <span class="text-gray-400">Confirms:</span> 1
+          </p>
+
+          <details class="mt-3">
+            <summary class="text-[11px] text-muted cursor-pointer hover:text-gray-300">Manual deposit (test mode)</summary>
+            <form id="form-deposit" class="space-y-2 mt-2">
+              <input type="number" name="amount" min="1" step="0.01" required placeholder="Amount in USD" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+              <button type="submit" class="w-full bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition">Add (test)</button>
+            </form>
+          </details>
+        </div>
+
+        <!-- Withdrawal -->
+        <div id="withdraw-section" class="bg-card border border-line rounded-xl p-5">
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="font-semibold">Withdraw</h3>
+            <span class="text-[10px] uppercase tracking-wider text-muted">10% / day</span>
+          </div>
+          <p class="text-xs text-muted mb-3">Daily limit: $<span id="withdraw-max">0.00</span> · 1 order/day</p>
+
+          <!-- Wallet -->
+          <div id="wallet-block" class="mb-3">
+            <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Wallet Address</label>
+            <div class="flex gap-2">
+              <input id="wallet-input" type="text" placeholder="Add USDT/BTC wallet" class="flex-1 bg-bg border border-line rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-accent" />
+              <button id="btn-save-wallet" class="px-3 py-2 bg-bg border border-line rounded-lg text-xs hover:border-accent transition">Save</button>
+            </div>
+            <p id="wallet-saved" class="hidden text-[11px] text-accent mt-1.5 font-mono break-all"></p>
+          </div>
+
+          <form id="form-withdraw" class="space-y-2">
+            <input type="number" name="amount" min="0.01" step="0.01" required placeholder="Amount in USD" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+            <button type="submit" id="btn-withdraw" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-sm transition">Place Withdrawal</button>
+          </form>
+          <p id="withdraw-note" class="hidden text-[11px] text-muted mt-2"></p>
+        </div>
+
+        <div class="bg-card border border-line rounded-xl p-5">
+          <h3 class="font-semibold mb-1">Referral Code</h3>
+          <p class="text-xs text-muted mb-3">Earn $20 per signup</p>
+          <div class="flex items-center gap-2">
+            <code id="referral-code" class="flex-1 bg-bg border border-line rounded-lg px-3 py-2 text-sm font-mono tracking-wider text-accent text-center"></code>
+            <button id="btn-copy-ref" class="px-3 py-2 bg-bg border border-line rounded-lg text-sm hover:border-accent transition">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tx + referred users -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-card border border-line rounded-xl">
+        <div class="px-5 py-3 border-b border-line">
+          <h3 class="font-semibold">Transaction History</h3>
+        </div>
+        <div class="overflow-x-auto scrollable max-h-72">
+          <table class="w-full text-sm">
+            <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+              <tr>
+                <th class="text-left px-5 py-2.5">Date</th>
+                <th class="text-left px-5 py-2.5">Type</th>
+                <th class="text-left px-5 py-2.5">Note</th>
+                <th class="text-right px-5 py-2.5">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-tx"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="bg-card border border-line rounded-xl">
+        <div class="px-5 py-3 border-b border-line flex items-center justify-between">
+          <h3 class="font-semibold">My Referred Users</h3>
+          <span id="referral-count-badge" class="text-xs px-2 py-0.5 bg-accent/10 text-accent rounded">0</span>
+        </div>
+        <div class="overflow-x-auto scrollable max-h-72">
+          <table class="w-full text-sm">
+            <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+              <tr>
+                <th class="text-left px-5 py-2.5">Joined</th>
+                <th class="text-left px-5 py-2.5">Name</th>
+                <th class="text-left px-5 py-2.5">Email</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-referrals"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Admin view -->
+<div id="view-admin" class="hidden min-h-screen">
+  <header class="border-b border-line bg-panel/60 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg class="w-6 h-6 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
+        </svg>
+        <span class="text-lg font-bold gradient-text">QuantEdge</span>
+        <span class="ml-2 px-2 py-0.5 text-[10px] uppercase tracking-wider bg-danger/10 text-danger rounded">Admin</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <span id="admin-name-pill" class="text-sm text-gray-300"></span>
+        <button id="btn-logout-admin" class="text-sm text-muted hover:text-danger transition">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8">
+    <h1 class="text-2xl font-semibold mb-6">Admin Console</h1>
+
+    <!-- Admin tabs -->
+    <div class="flex gap-1 mb-6 border-b border-line">
+      <button data-admin-tab="users" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-accent text-accent">Users</button>
+      <button data-admin-tab="withdrawals" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition flex items-center gap-1.5">
+        Withdrawal Requests
+        <span id="wd-pending-badge" class="hidden text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded font-mono">0</span>
+      </button>
+    </div>
+
+    <!-- Tab: Users -->
+    <div id="admin-tab-users">
+
+    <!-- Admin stats -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Total Users</div>
+        <div class="text-2xl font-bold"><span id="admin-stat-users">0</span></div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Total Balance</div>
+        <div class="text-2xl font-bold text-accent">$<span id="admin-stat-balance">0</span></div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Deposits</div>
+        <div class="text-2xl font-bold">$<span id="admin-stat-deposits">0</span></div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Referral Bonus</div>
+        <div class="text-2xl font-bold text-accent2">$<span id="admin-stat-refbonus">0</span></div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4">
+        <div class="text-xs uppercase tracking-wider text-muted mb-2">Admin Credits</div>
+        <div class="text-2xl font-bold">$<span id="admin-stat-credit">0</span></div>
+      </div>
+    </div>
+
+    <!-- Create user -->
+    <div class="bg-card border border-line rounded-xl p-5 mb-8">
+      <h3 class="font-semibold mb-4">Create User</h3>
+      <form id="form-create-user" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <input type="text" name="name" required placeholder="Name" class="bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" />
+        <input type="email" name="email" required placeholder="Email" class="bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" />
+        <input type="password" name="password" required minlength="6" placeholder="Password" class="bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" />
+        <button type="submit" class="bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Create User</button>
+      </form>
+    </div>
+
+    <!-- Users table -->
+    <div class="bg-card border border-line rounded-xl">
+      <div class="px-5 py-4 border-b border-line flex items-center justify-between">
+        <h3 class="font-semibold">All Users</h3>
+        <button id="btn-refresh-admin" class="text-xs px-3 py-1.5 bg-bg border border-line rounded hover:border-accent transition">Refresh</button>
+      </div>
+      <div class="overflow-x-auto scrollable">
+        <table class="w-full text-sm">
+          <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th class="text-left px-5 py-3">ID</th>
+              <th class="text-left px-5 py-3">Name</th>
+              <th class="text-left px-5 py-3">Email</th>
+              <th class="text-left px-5 py-3">Referral Code</th>
+              <th class="text-right px-5 py-3">Refs</th>
+              <th class="text-right px-5 py-3">Balance</th>
+              <th class="text-left px-5 py-3">Joined</th>
+              <th class="text-right px-5 py-3 pr-5">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-admin-users"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recent transactions -->
+    <div class="bg-card border border-line rounded-xl mt-8">
+      <div class="px-5 py-4 border-b border-line">
+        <h3 class="font-semibold">Recent Transactions (all users)</h3>
+      </div>
+      <div class="overflow-x-auto scrollable max-h-96">
+        <table class="w-full text-sm">
+          <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+            <tr>
+              <th class="text-left px-5 py-3">Date</th>
+              <th class="text-left px-5 py-3">User</th>
+              <th class="text-left px-5 py-3">Type</th>
+              <th class="text-left px-5 py-3">Note</th>
+              <th class="text-right px-5 py-3 pr-5">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-admin-tx"></tbody>
+        </table>
+      </div>
+    </div>
+    </div>
+    <!-- /Tab: Users -->
+
+    <!-- Tab: Withdrawals -->
+    <div id="admin-tab-withdrawals" class="hidden">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Pending</div>
+          <div class="text-2xl font-bold text-yellow-400" id="wd-stat-pending">0</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Success</div>
+          <div class="text-2xl font-bold text-accent" id="wd-stat-success">0</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Rejected</div>
+          <div class="text-2xl font-bold text-danger" id="wd-stat-rejected">0</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Total</div>
+          <div class="text-2xl font-bold" id="wd-stat-total">0</div>
+        </div>
+      </div>
+
+      <div class="bg-card border border-line rounded-xl">
+        <div class="px-5 py-4 border-b border-line flex items-center justify-between flex-wrap gap-2">
+          <h3 class="font-semibold">Withdrawal Requests</h3>
+          <div class="flex items-center gap-2">
+            <select id="wd-filter" class="bg-bg border border-line rounded px-2.5 py-1.5 text-xs focus:outline-none">
+              <option value="">All</option>
+              <option value="pending" selected>Pending only</option>
+              <option value="success">Success</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button id="btn-refresh-wd" class="text-xs px-3 py-1.5 bg-bg border border-line rounded hover:border-accent transition">Refresh</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto scrollable">
+          <table class="w-full text-sm">
+            <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+              <tr>
+                <th class="text-left px-5 py-3">Date</th>
+                <th class="text-left px-5 py-3">User</th>
+                <th class="text-right px-5 py-3">Amount</th>
+                <th class="text-left px-5 py-3">Wallet</th>
+                <th class="text-left px-5 py-3">Status</th>
+                <th class="text-left px-5 py-3">TXID</th>
+                <th class="text-right px-5 py-3 pr-5">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-withdrawals"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- /Tab: Withdrawals -->
+  </main>
+</div>
+
+<!-- Approve withdrawal modal -->
+<div id="modal-approve-wd" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-md w-full">
+    <h3 class="text-lg font-semibold mb-1">Mark Payment as Sent</h3>
+    <p class="text-sm text-muted mb-4">User: <span id="approve-wd-label"></span> · Amount: $<span id="approve-wd-amount"></span></p>
+
+    <div class="bg-bg border border-line rounded-lg p-3 mb-4">
+      <div class="text-[11px] uppercase tracking-wider text-muted mb-1.5">Send USDT to this wallet</div>
+      <div class="flex items-center gap-2">
+        <code id="approve-wd-wallet" class="flex-1 text-[11px] font-mono text-accent break-all leading-snug">--</code>
+        <button type="button" id="btn-approve-wd-copy" class="text-[10px] px-2 py-1 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition whitespace-nowrap">Copy</button>
+      </div>
+    </div>
+
+    <form id="form-approve-wd" class="space-y-3">
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Payment TXID</label>
+        <input type="text" name="txid" placeholder="On-chain TXID after sending" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+      </div>
+      <div class="flex gap-2">
+        <button type="button" id="btn-approve-wd-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Cancel</button>
+        <button type="submit" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Mark Success</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reject withdrawal modal -->
+<div id="modal-reject-wd" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-md w-full">
+    <h3 class="text-lg font-semibold mb-1">Reject Withdrawal</h3>
+    <p class="text-sm text-muted mb-4">Refunds $<span id="reject-wd-amount"></span> to <span id="reject-wd-label"></span></p>
+    <form id="form-reject-wd" class="space-y-3">
+      <input type="text" name="reason" placeholder="Reason (optional)" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-danger" />
+      <div class="flex gap-2">
+        <button type="button" id="btn-reject-wd-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Cancel</button>
+        <button type="submit" class="flex-1 bg-danger hover:bg-danger/90 text-white font-semibold py-2.5 rounded-lg text-sm">Reject &amp; Refund</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Credit modal -->
+<div id="modal-credit" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-md w-full">
+    <h3 class="text-lg font-semibold mb-1">Add USD Credit</h3>
+    <p class="text-sm text-muted mb-4">User: <span id="credit-user-label"></span></p>
+    <form id="form-credit" class="space-y-3">
+      <input type="number" name="amount" step="0.01" required placeholder="Amount in USD" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" />
+      <input type="text" name="txid" id="credit-txid-input" placeholder="TXID (optional)" class="hidden w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
+      <input type="text" name="note" placeholder="Note (optional)" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" />
+      <div class="flex gap-2">
+        <button type="button" id="btn-credit-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm hover:border-line">Cancel</button>
+        <button type="submit" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Apply</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
