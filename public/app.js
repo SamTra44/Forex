@@ -303,13 +303,12 @@ let prevBalance = null;
 
 async function loadDashboard() {
   try {
-    const [me, txs, refs, trades, botStatus, wdStatus] = await Promise.all([
+    const [me, txs, refs, trades, botStatus] = await Promise.all([
       API.req('/api/me'),
       API.req('/api/me/transactions'),
       API.req('/api/me/referrals'),
       API.req('/api/me/bot/trades'),
       API.req('/api/me/bot/status'),
-      API.req('/api/me/withdraw/status'),
     ]);
     const u = me.user;
     $('user-name-pill').textContent = u.name;
@@ -386,9 +385,6 @@ async function loadDashboard() {
       $('bot-status-text').className = 'text-2xl font-bold text-muted';
       $('bot-status-sub').textContent = 'Deposit to begin';
     }
-
-    // Withdrawal panel
-    renderWithdrawal(wdStatus, u);
 
     // Live trades feed
     renderBotTrades(trades.trades);
@@ -697,15 +693,6 @@ function recalcUsdtPreviews() {
     $('usdt-sell-rate').textContent = usdtState.price.toFixed(4);
     $('usdt-sell-receive').textContent = fmt(usdt * usdtState.price);
   }
-  // Withdraw
-  const wdInput = document.querySelector('.usdt-wd-amt');
-  if (wdInput) {
-    const amt = Number(wdInput.value) || 0;
-    const fee = amt * 0.01;
-    $('usdt-wd-req').textContent = fmt6(amt);
-    $('usdt-wd-fee').textContent = fmt6(fee);
-    $('usdt-wd-net').textContent = fmt6(Math.max(0, amt - fee));
-  }
 }
 
 // Tab switching for USDT panel
@@ -732,8 +719,7 @@ document.addEventListener('input', (e) => {
   if (!e.target) return;
   if (e.target.classList && (
     e.target.classList.contains('usdt-buy-usd') ||
-    e.target.classList.contains('usdt-sell-usdt') ||
-    e.target.classList.contains('usdt-wd-amt')
+    e.target.classList.contains('usdt-sell-usdt')
   )) {
     recalcUsdtPreviews();
   }
@@ -772,10 +758,6 @@ document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'btn-usdt-send-max') {
     const inp = document.querySelector('#form-usdt-send input[name="usdt_amount"]');
     if (inp) inp.value = usdtState.balance.toFixed(6);
-  }
-  if (e.target && e.target.id === 'btn-usdt-wd-max') {
-    const inp = document.querySelector('.usdt-wd-amt');
-    if (inp) { inp.value = usdtState.balance.toFixed(6); recalcUsdtPreviews(); }
   }
   if (e.target && e.target.id === 'btn-copy-usdt-addr') {
     if (!usdtState.address) return;
@@ -833,64 +815,7 @@ document.addEventListener('submit', async (e) => {
     } catch (err) { toast(err.message, 'error'); }
     return;
   }
-  if (e.target && e.target.id === 'form-usdt-withdraw') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      const data = await API.req('/api/usdt/withdraw', {
-        method: 'POST',
-        body: JSON.stringify({
-          usdt_amount: Number(fd.get('usdt_amount')),
-          to_address: fd.get('to_address'),
-          network: fd.get('network'),
-        }),
-      });
-      e.target.reset();
-      toast(`Withdrawal queued · ${fmt6(data.net_amount)} USDT in ~${data.eta_hours}h`, 'success');
-      loadDashboard();
-    } catch (err) { toast(err.message, 'error'); }
-    return;
-  }
 });
-
-// ---------- Withdrawal & Wallet ----------
-function renderWithdrawal(status, user) {
-  $('withdraw-max').textContent = fmt(status.max_withdrawal);
-
-  // Wallet display
-  if (user.wallet_address) {
-    $('wallet-input').value = '';
-    $('wallet-input').placeholder = 'Update wallet address';
-    $('wallet-saved').classList.remove('hidden');
-    $('wallet-saved').textContent = 'Saved · ' + user.wallet_address;
-  } else {
-    $('wallet-saved').classList.add('hidden');
-  }
-
-  const note = $('withdraw-note');
-  const btn = $('btn-withdraw');
-  if (!user.wallet_address) {
-    note.classList.remove('hidden');
-    note.textContent = 'Add a wallet address before withdrawing.';
-    btn.disabled = true;
-    btn.className = 'w-full bg-line text-muted font-semibold py-2 rounded-lg text-sm cursor-not-allowed';
-  } else if (status.used_today) {
-    note.classList.remove('hidden');
-    const t = status.todays_withdrawal;
-    note.textContent = `Today's withdrawal placed: $${fmt(Math.abs(t.amount))} · resets at midnight UTC`;
-    btn.disabled = true;
-    btn.className = 'w-full bg-line text-muted font-semibold py-2 rounded-lg text-sm cursor-not-allowed';
-  } else if (status.max_withdrawal < 0.01) {
-    note.classList.remove('hidden');
-    note.textContent = 'Build your balance to enable withdrawals.';
-    btn.disabled = true;
-    btn.className = 'w-full bg-line text-muted font-semibold py-2 rounded-lg text-sm cursor-not-allowed';
-  } else {
-    note.classList.add('hidden');
-    btn.disabled = false;
-    btn.className = 'w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-sm transition';
-  }
-}
 
 document.addEventListener('click', async (e) => {
   if (e.target && e.target.classList && e.target.classList.contains('btn-copy-text')) {
@@ -904,35 +829,6 @@ document.addEventListener('click', async (e) => {
       toast('Copied to clipboard', 'success');
     } catch { toast('Copy failed', 'error'); }
     return;
-  }
-  if (e.target && e.target.id === 'btn-save-wallet') {
-    const wallet = $('wallet-input').value.trim();
-    if (!wallet) return toast('Enter a wallet address', 'error');
-    try {
-      await API.req('/api/me/wallet', { method: 'POST', body: JSON.stringify({ wallet_address: wallet }) });
-      toast('Wallet saved', 'success');
-      loadDashboard();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-});
-
-document.addEventListener('submit', async (e) => {
-  if (e.target && e.target.id === 'form-withdraw') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      await API.req('/api/me/withdraw', {
-        method: 'POST',
-        body: JSON.stringify({ amount: Number(fd.get('amount')) }),
-      });
-      e.target.reset();
-      toast('Withdrawal placed', 'success');
-      loadDashboard();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
   }
 });
 
@@ -967,33 +863,34 @@ async function loadAdmin() {
     ubody.innerHTML = '';
     const nonAdmins = users.users.filter(x => !x.is_admin);
     if (nonAdmins.length === 0) {
-      ubody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-8 text-sm">No users yet</td></tr>`;
+      ubody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-8 text-sm">No users yet</td></tr>`;
     } else {
       nonAdmins.forEach(x => {
         const tr = document.createElement('tr');
         tr.className = 'border-t border-line hover:bg-bg/40';
-        const depAddr = x.deposit_address || '';
-        const depShort = depAddr ? depAddr.slice(0, 6) + '…' + depAddr.slice(-4) : '—';
+        const usdtAddr = x.usdt_address || '';
+        const usdtShort = usdtAddr ? usdtAddr.slice(0, 6) + '…' + usdtAddr.slice(-4) : '—';
         tr.innerHTML = `
           <td class="px-5 py-3 text-muted">#${x.id}</td>
           <td class="px-5 py-3">${escapeHtml(x.name)}</td>
           <td class="px-5 py-3 text-gray-300">${escapeHtml(x.email)}</td>
-          <td class="px-5 py-3"><code class="text-xs text-accent">${x.referral_code}</code><div class="text-[10px] text-muted font-mono mt-0.5" title="${escapeHtml(depAddr)}">${depShort}</div></td>
+          <td class="px-5 py-3"><code class="text-xs text-accent">${x.referral_code}</code><div class="text-[10px] text-muted font-mono mt-0.5" title="${escapeHtml(usdtAddr)}">${usdtShort}</div></td>
           <td class="px-5 py-3 text-right">${x.referral_count}</td>
           <td class="px-5 py-3 text-right font-mono text-accent">$${fmt(x.balance)}</td>
+          <td class="px-5 py-3 text-right font-mono text-yellow-400">${fmt6(x.usdt_balance || 0)}</td>
           <td class="px-5 py-3 text-muted text-xs">${fmtDate(x.created_at)}</td>
           <td class="px-5 py-3 pr-5 text-right whitespace-nowrap">
-            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-mark-deposit text-xs px-2.5 py-1.5 bg-accent2/10 text-accent2 border border-accent2/30 rounded hover:bg-accent2/20 transition mr-1">Mark Deposit</button>
-            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition">Add USD</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition mr-1">Add USD</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-usdt text-xs px-2.5 py-1.5 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 rounded hover:bg-yellow-400/20 transition">Add USDT</button>
           </td>
         `;
         ubody.appendChild(tr);
       });
       ubody.querySelectorAll('.btn-credit').forEach(b => {
-        b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, false));
+        b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, 'usd'));
       });
-      ubody.querySelectorAll('.btn-mark-deposit').forEach(b => {
-        b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, true));
+      ubody.querySelectorAll('.btn-credit-usdt').forEach(b => {
+        b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, 'usdt'));
       });
     }
 
@@ -1235,19 +1132,32 @@ $('form-create-user').addEventListener('submit', async (e) => {
   }
 });
 
-// Credit modal
+// Credit modal — supports 'usd' or 'usdt' modes
 let currentCreditUserId = null;
-let currentCreditAsDeposit = false;
-function openCreditModal(id, label, asDeposit = false) {
+let currentCreditMode = 'usd';
+function openCreditModal(id, label, mode = 'usd') {
   currentCreditUserId = id;
-  currentCreditAsDeposit = asDeposit;
+  currentCreditMode = mode;
   $('credit-user-label').textContent = label;
   $('modal-credit').classList.remove('hidden');
   $('form-credit').reset();
   const title = $('modal-credit').querySelector('h3');
-  if (title) title.textContent = asDeposit ? 'Mark On-Chain Deposit' : 'Add USD Credit';
+  const amtInput = $('form-credit').querySelector('input[name="amount"]');
+  if (mode === 'usdt') {
+    if (title) title.textContent = 'Add USDT to Wallet';
+    if (amtInput) {
+      amtInput.placeholder = 'Amount in USDT (e.g. 100.000000)';
+      amtInput.step = '0.000001';
+    }
+  } else {
+    if (title) title.textContent = 'Add USD Credit';
+    if (amtInput) {
+      amtInput.placeholder = 'Amount in USD';
+      amtInput.step = '0.01';
+    }
+  }
   const txInput = $('credit-txid-input');
-  if (txInput) txInput.classList.toggle('hidden', !asDeposit);
+  if (txInput) txInput.classList.add('hidden');
 }
 $('btn-credit-cancel').addEventListener('click', () => {
   $('modal-credit').classList.add('hidden');
@@ -1257,17 +1167,18 @@ $('form-credit').addEventListener('submit', async (e) => {
   if (!currentCreditUserId) return;
   const fd = new FormData(e.target);
   try {
-    await API.req(`/api/admin/users/${currentCreditUserId}/credit`, {
+    const path = currentCreditMode === 'usdt'
+      ? `/api/admin/users/${currentCreditUserId}/credit-usdt`
+      : `/api/admin/users/${currentCreditUserId}/credit`;
+    await API.req(path, {
       method: 'POST',
       body: JSON.stringify({
         amount: Number(fd.get('amount')),
         note: fd.get('note') || undefined,
-        txid: fd.get('txid') || undefined,
-        as_deposit: currentCreditAsDeposit,
       }),
     });
     $('modal-credit').classList.add('hidden');
-    toast(currentCreditAsDeposit ? 'Deposit marked received' : 'Balance updated', 'success');
+    toast(currentCreditMode === 'usdt' ? 'USDT wallet credited' : 'USD balance updated', 'success');
     loadAdmin();
   } catch (err) {
     toast(err.message, 'error');

@@ -57,9 +57,8 @@ function applyPendingRestore() {
 applyPendingRestore();
 const USDT_PRICE_REFRESH_MS = 60_000;
 const USDT_PRICE_FALLBACK = 1.00;
-const USDT_MIN_TRADE = 1;          // minimum USD amount for buy/sell
-const USDT_MIN_TRANSFER = 0.01;    // minimum USDT for transfer/withdraw
-const USDT_WITHDRAW_FEE_PCT = 0.01; // 1% network fee on external USDT withdrawal
+const USDT_MIN_TRADE = 1;          // minimum USD amount for withdraw/add-fund
+const USDT_MIN_TRANSFER = 0.01;    // minimum USDT for internal transfer
 
 // ---------- DB setup ----------
 const db = new DatabaseSync(DB_PATH);
@@ -328,91 +327,6 @@ app.get('/api/me/referrals', authRequired, (req, res) => {
   res.json({ referrals: rows });
 });
 
-app.post('/api/me/deposit', authRequired, (req, res) => {
-  const amount = Number(req.body?.amount);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return res.status(400).json({ error: 'invalid amount' });
-  }
-  if (amount > 1_000_000) {
-    return res.status(400).json({ error: 'amount too large' });
-  }
-  db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, req.user.id);
-  db.prepare(`
-    INSERT INTO transactions (user_id, type, amount, note)
-    VALUES (?, 'deposit', ?, ?)
-  `).run(req.user.id, amount, req.body?.note || 'USD deposit');
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  res.json({ user: publicUser(user) });
-});
-
-app.post('/api/me/wallet', authRequired, (req, res) => {
-  const wallet = String(req.body?.wallet_address || '').trim();
-  if (wallet.length < 8 || wallet.length > 200) {
-    return res.status(400).json({ error: 'invalid wallet address' });
-  }
-  db.prepare('UPDATE users SET wallet_address = ? WHERE id = ?').run(wallet, req.user.id);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  res.json({ user: publicUser(user) });
-});
-
-app.post('/api/me/withdraw', authRequired, (req, res) => {
-  const amount = Number(req.body?.amount);
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  if (!user.wallet_address) {
-    return res.status(400).json({ error: 'add a withdrawal wallet address first' });
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return res.status(400).json({ error: 'invalid amount' });
-  }
-  const maxAllowed = +(Number(user.balance) * 0.10).toFixed(2);
-  if (amount > maxAllowed + 0.001) {
-    return res.status(400).json({ error: `daily withdrawal limit is 10% of balance ($${maxAllowed.toFixed(2)})` });
-  }
-  if (amount > Number(user.balance)) {
-    return res.status(400).json({ error: 'insufficient balance' });
-  }
-  // One withdrawal per day (any status counts)
-  const today = new Date().toISOString().slice(0, 10);
-  const existing = db.prepare(`
-    SELECT id FROM transactions
-    WHERE user_id = ? AND type = 'withdrawal'
-      AND status IN ('pending', 'success')
-      AND substr(created_at, 1, 10) = ?
-    LIMIT 1
-  `).get(req.user.id, today);
-  if (existing) {
-    return res.status(400).json({ error: 'only one withdrawal per day is allowed' });
-  }
-
-  // Deduct balance immediately, mark request as pending
-  db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(amount, req.user.id);
-  db.prepare(`
-    INSERT INTO transactions (user_id, type, amount, note, status)
-    VALUES (?, 'withdrawal', ?, ?, 'pending')
-  `).run(req.user.id, -amount, `Withdrawal to ${user.wallet_address}`);
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  res.json({ user: publicUser(updated) });
-});
-
-app.get('/api/me/withdraw/status', authRequired, (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  const today = new Date().toISOString().slice(0, 10);
-  const todays = db.prepare(`
-    SELECT id, amount, note, created_at FROM transactions
-    WHERE user_id = ? AND type = 'withdrawal' AND substr(created_at, 1, 10) = ?
-    ORDER BY id DESC LIMIT 1
-  `).get(req.user.id, today);
-  const maxAllowed = +(Number(user.balance) * 0.10).toFixed(2);
-  res.json({
-    max_withdrawal: maxAllowed,
-    used_today: !!todays,
-    todays_withdrawal: todays || null,
-    wallet_address: user.wallet_address || null,
-    balance: Number(user.balance),
-  });
-});
 
 // ---------- Admin routes ----------
 app.get('/api/admin/users', authRequired, adminRequired, (req, res) => {
@@ -479,6 +393,37 @@ app.post('/api/admin/users', authRequired, adminRequired, (req, res) => {
   `).run(normEmail, hash, String(name).trim(), code, depAddr, usdtAddr);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
   res.json({ user: publicUser(user) });
+});
+
+// Admin: credit (or debit, with negative amount) a user's USDT wallet.
+// Used when an off-platform deposit lands or for cash-out reversals.
+app.post('/api/admin/users/:id/credit-usdt', authRequired, adminRequired, (req, res) => {
+  const userId = Number(req.params.id);
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return res.status(400).json({ error: 'invalid amount' });
+  }
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!target) return res.status(404).json({ error: 'user not found' });
+
+  const newBal = Number(target.usdt_balance || 0) + amount;
+  if (newBal < -1e-9) return res.status(400).json({ error: 'cannot debit below 0' });
+
+  const note = req.body?.note || (amount > 0
+    ? `USDT credit by ${req.user.email}`
+    : `USDT debit by ${req.user.email}`);
+  const usdt = +Number(amount).toFixed(6);
+
+  withTransaction(() => {
+    db.prepare('UPDATE users SET usdt_balance = usdt_balance + ? WHERE id = ?').run(usdt, userId);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, usdt_amount, note)
+      VALUES (?, 'admin_credit', 0, ?, ?)
+    `).run(userId, usdt, note);
+  });
+
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  res.json({ user: publicUser(updated) });
 });
 
 app.post('/api/admin/users/:id/credit', authRequired, adminRequired, (req, res) => {
@@ -754,59 +699,6 @@ app.post('/api/usdt/send', authRequired, (req, res) => {
     user: publicUser(updated),
     sent_to: { name: recipient.name, email: recipient.email, address: recipient.usdt_address },
     amount: amt,
-  });
-});
-
-// Withdraw USDT to external crypto wallet — pending, processed within 24h
-app.post('/api/usdt/withdraw', authRequired, (req, res) => {
-  const usdt = Number(req.body?.usdt_amount);
-  const toAddr = String(req.body?.to_address || '').trim();
-  const network = String(req.body?.network || 'TRC-20').trim().toUpperCase();
-  if (!toAddr || toAddr.length < 10 || toAddr.length > 200) {
-    return res.status(400).json({ error: 'invalid external wallet address' });
-  }
-  if (!['TRC-20', 'ERC-20', 'BEP-20'].includes(network)) {
-    return res.status(400).json({ error: 'unsupported network' });
-  }
-  if (!Number.isFinite(usdt) || usdt < USDT_MIN_TRANSFER) {
-    return res.status(400).json({ error: `minimum withdrawal is ${USDT_MIN_TRANSFER} USDT` });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-
-  // Don't let a user withdraw to one of OUR internal addresses via the external path
-  const internalMatch = db.prepare('SELECT id FROM users WHERE usdt_address = ?').get(toAddr);
-  if (internalMatch) {
-    return res.status(400).json({ error: 'this is an internal address — use Send USDT instead' });
-  }
-
-  if (Number(user.usdt_balance) < usdt - 1e-9) {
-    return res.status(400).json({ error: 'insufficient USDT balance' });
-  }
-
-  const amt = round6(usdt);
-  const fee = round6(amt * USDT_WITHDRAW_FEE_PCT);
-  const netAmount = round6(amt - fee);
-  if (netAmount <= 0) return res.status(400).json({ error: 'amount too small after fee' });
-
-  const note = `Withdraw ${amt.toFixed(6)} USDT to ${toAddr} (${network}) · fee ${fee.toFixed(6)}`;
-
-  withTransaction(() => {
-    db.prepare('UPDATE users SET usdt_balance = usdt_balance - ? WHERE id = ?').run(amt, user.id);
-    db.prepare(`
-      INSERT INTO transactions (user_id, type, amount, usdt_amount, note, status)
-      VALUES (?, 'usdt_withdraw', 0, ?, ?, 'pending')
-    `).run(user.id, -amt, note);
-  });
-
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  res.json({
-    user: publicUser(updated),
-    requested: amt,
-    fee,
-    net_amount: netAmount,
-    eta_hours: 24,
   });
 });
 

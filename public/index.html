@@ -350,15 +350,14 @@
 
           <!-- Action tabs -->
           <div class="flex gap-1 mb-4 border-b border-line">
-            <button data-usdt-tab="buy" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-accent text-accent">Buy</button>
-            <button data-usdt-tab="sell" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Sell</button>
-            <button data-usdt-tab="send" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Send (internal)</button>
-            <button data-usdt-tab="withdraw" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">External Withdraw</button>
+            <button data-usdt-tab="buy" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-accent text-accent">Withdraw to Wallet</button>
+            <button data-usdt-tab="sell" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Add Fund to Trading</button>
+            <button data-usdt-tab="send" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Send to User</button>
           </div>
 
-          <!-- Buy tab -->
+          <!-- Withdraw (Trading USD → Platform USDT Wallet) -->
           <div id="usdt-pane-buy" class="usdt-pane">
-            <p class="text-xs text-muted mb-3">Convert your USD balance into USDT instantly at the live rate.</p>
+            <p class="text-xs text-muted mb-3">Move funds from your trading balance into your platform USDT wallet — instant, no fees, locked at the live USDT/USD rate.</p>
             <form id="form-usdt-buy" class="space-y-3">
               <div>
                 <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">USD Amount</label>
@@ -368,34 +367,34 @@
                 </div>
               </div>
               <div class="bg-bg/60 border border-line rounded-lg p-3 text-xs">
-                <div class="flex justify-between"><span class="text-muted">You pay</span><span class="font-mono">$<span id="usdt-buy-pay">0.00</span></span></div>
-                <div class="flex justify-between mt-1"><span class="text-muted">Rate</span><span class="font-mono">$<span id="usdt-buy-rate">1.0000</span></span></div>
-                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">You receive</span><span class="font-mono text-yellow-400 font-semibold"><span id="usdt-buy-receive">0.000000</span> USDT</span></div>
+                <div class="flex justify-between"><span class="text-muted">From trading</span><span class="font-mono">$<span id="usdt-buy-pay">0.00</span></span></div>
+                <div class="flex justify-between mt-1"><span class="text-muted">Live rate</span><span class="font-mono">$<span id="usdt-buy-rate">1.0000</span></span></div>
+                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">Into wallet</span><span class="font-mono text-yellow-400 font-semibold"><span id="usdt-buy-receive">0.000000</span> USDT</span></div>
               </div>
-              <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Buy USDT</button>
+              <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Withdraw to USDT Wallet</button>
             </form>
           </div>
 
-          <!-- Sell tab -->
+          <!-- Add Fund (Platform USDT Wallet → Trading USD) -->
           <div id="usdt-pane-sell" class="usdt-pane hidden">
-            <p class="text-xs text-muted mb-3">Sell your USDT and credit your USD balance instantly.</p>
+            <p class="text-xs text-muted mb-3">Move USDT from your platform wallet back into your trading balance — instant, at the live rate.</p>
             <form id="form-usdt-sell" class="space-y-3">
               <div>
                 <label class="block text-[11px] uppercase tracking-wider text-muted mb-1 flex justify-between"><span>USDT Amount</span><button type="button" id="btn-usdt-sell-max" class="text-[10px] text-accent hover:underline normal-case tracking-normal">Max</button></label>
                 <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="usdt-sell-usdt w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
               </div>
               <div class="bg-bg/60 border border-line rounded-lg p-3 text-xs">
-                <div class="flex justify-between"><span class="text-muted">You sell</span><span class="font-mono"><span id="usdt-sell-sell">0.000000</span> USDT</span></div>
-                <div class="flex justify-between mt-1"><span class="text-muted">Rate</span><span class="font-mono">$<span id="usdt-sell-rate">1.0000</span></span></div>
-                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">You receive</span><span class="font-mono text-accent font-semibold">$<span id="usdt-sell-receive">0.00</span></span></div>
+                <div class="flex justify-between"><span class="text-muted">From wallet</span><span class="font-mono"><span id="usdt-sell-sell">0.000000</span> USDT</span></div>
+                <div class="flex justify-between mt-1"><span class="text-muted">Live rate</span><span class="font-mono">$<span id="usdt-sell-rate">1.0000</span></span></div>
+                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">Into trading</span><span class="font-mono text-accent font-semibold">$<span id="usdt-sell-receive">0.00</span></span></div>
               </div>
-              <button type="submit" class="w-full bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2.5 rounded-lg text-sm transition">Sell USDT</button>
+              <button type="submit" class="w-full bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2.5 rounded-lg text-sm transition">Add Fund to Trading</button>
             </form>
           </div>
 
-          <!-- Send (internal) tab -->
+          <!-- Send (internal) -->
           <div id="usdt-pane-send" class="usdt-pane hidden">
-            <p class="text-xs text-muted mb-3">Send USDT to another QuantEdge user instantly. Internal transfers are free and confirm in seconds.</p>
+            <p class="text-xs text-muted mb-3">Send USDT to another QuantEdge user. Internal-only · instant · 0% fee.</p>
             <form id="form-usdt-send" class="space-y-3">
               <div>
                 <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Recipient USDT Address</label>
@@ -407,39 +406,9 @@
                 <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
               </div>
               <div class="bg-bg/60 border border-yellow-400/20 rounded-lg p-2.5 text-[11px] text-gray-300">
-                <span class="text-yellow-400 font-semibold">Instant · 0% fee</span> — internal-only transfer between QuantEdge wallets.
+                <span class="text-yellow-400 font-semibold">Instant · 0% fee</span> — recipient must be a QuantEdge user. External addresses are not supported.
               </div>
               <button type="submit" class="w-full bg-yellow-400 hover:bg-yellow-400/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Send USDT</button>
-            </form>
-          </div>
-
-          <!-- External withdraw tab -->
-          <div id="usdt-pane-withdraw" class="usdt-pane hidden">
-            <p class="text-xs text-muted mb-3">Send USDT to an external on-chain wallet. Processed within <span class="text-yellow-400 font-semibold">24 hours</span>.</p>
-            <form id="form-usdt-withdraw" class="space-y-3">
-              <div>
-                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Network</label>
-                <select name="network" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-accent">
-                  <option value="TRC-20">Tron (TRC-20) — recommended</option>
-                  <option value="ERC-20">Ethereum (ERC-20)</option>
-                  <option value="BEP-20">BNB Smart Chain (BEP-20)</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">External Wallet Address</label>
-                <input type="text" name="to_address" required placeholder="External USDT wallet" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
-              </div>
-              <div>
-                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1 flex justify-between"><span>Amount</span><button type="button" id="btn-usdt-wd-max" class="text-[10px] text-accent hover:underline normal-case tracking-normal">Max</button></label>
-                <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="usdt-wd-amt w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
-              </div>
-              <div class="bg-bg/60 border border-line rounded-lg p-3 text-xs">
-                <div class="flex justify-between"><span class="text-muted">Amount</span><span class="font-mono"><span id="usdt-wd-req">0.000000</span> USDT</span></div>
-                <div class="flex justify-between mt-1"><span class="text-muted">Network fee (1%)</span><span class="font-mono text-orange-400"><span id="usdt-wd-fee">0.000000</span> USDT</span></div>
-                <div class="flex justify-between mt-1 pt-1.5 border-t border-line"><span class="text-gray-300">Recipient gets</span><span class="font-mono text-accent font-semibold"><span id="usdt-wd-net">0.000000</span> USDT</span></div>
-              </div>
-              <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Request Withdrawal</button>
-              <p class="text-[10px] text-muted text-center">Pending withdrawals are processed manually within 24 hrs. You can cancel? No — but it can be rejected & refunded by support.</p>
             </form>
           </div>
         </div>
@@ -453,7 +422,7 @@
           <code id="usdt-address" class="block text-[11px] font-mono text-yellow-400 break-all leading-snug bg-bg border border-line rounded-lg px-2.5 py-2 mb-2">--</code>
           <button id="btn-copy-usdt-addr" class="w-full text-xs px-3 py-2 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 rounded hover:bg-yellow-400/20 transition">Copy address</button>
           <div class="mt-3 bg-bg/60 border border-line rounded-lg p-2.5 text-[11px] text-gray-300 leading-snug">
-            Other QuantEdge users can send you USDT to this address — <span class="text-yellow-400">instant</span>, no fees. Do not share with external wallets.
+            Other QuantEdge users can send you USDT to this address — <span class="text-yellow-400">instant · 0% fee</span>. Internal only — do not share with external wallets, they cannot reach this address.
           </div>
         </div>
       </div>
@@ -483,31 +452,6 @@
       </div>
 
       <div class="space-y-4">
-        <!-- Withdrawal -->
-        <div id="withdraw-section" class="bg-card border border-line rounded-xl p-5">
-          <div class="flex items-center justify-between mb-1">
-            <h3 class="font-semibold">Withdraw</h3>
-            <span class="text-[10px] uppercase tracking-wider text-muted">10% / day</span>
-          </div>
-          <p class="text-xs text-muted mb-3">Daily limit: $<span id="withdraw-max">0.00</span> · 1 order/day</p>
-
-          <!-- Wallet -->
-          <div id="wallet-block" class="mb-3">
-            <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Wallet Address</label>
-            <div class="flex gap-2">
-              <input id="wallet-input" type="text" placeholder="Add USDT/BTC wallet" class="flex-1 bg-bg border border-line rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-accent" />
-              <button id="btn-save-wallet" class="px-3 py-2 bg-bg border border-line rounded-lg text-xs hover:border-accent transition">Save</button>
-            </div>
-            <p id="wallet-saved" class="hidden text-[11px] text-accent mt-1.5 font-mono break-all"></p>
-          </div>
-
-          <form id="form-withdraw" class="space-y-2">
-            <input type="number" name="amount" min="0.01" step="0.01" required placeholder="Amount in USD" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent" />
-            <button type="submit" id="btn-withdraw" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-sm transition">Place Withdrawal</button>
-          </form>
-          <p id="withdraw-note" class="hidden text-[11px] text-muted mt-2"></p>
-        </div>
-
         <div class="bg-card border border-line rounded-xl p-5">
           <h3 class="font-semibold mb-1">Referral Code</h3>
           <p class="text-xs text-muted mb-3">Earn $20 per signup</p>
@@ -646,7 +590,8 @@
               <th class="text-left px-5 py-3">Email</th>
               <th class="text-left px-5 py-3">Referral Code</th>
               <th class="text-right px-5 py-3">Refs</th>
-              <th class="text-right px-5 py-3">Balance</th>
+              <th class="text-right px-5 py-3">USD</th>
+              <th class="text-right px-5 py-3">USDT</th>
               <th class="text-left px-5 py-3">Joined</th>
               <th class="text-right px-5 py-3 pr-5">Actions</th>
             </tr>
