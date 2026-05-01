@@ -396,58 +396,67 @@
       </div>
     </div>
 
-    <!-- Profile + Referral Wallet -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-      <!-- Profile -->
-      <div id="profile-section" class="bg-card border border-line rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-semibold flex items-center gap-2">
-            <svg class="w-4 h-4 text-accent2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            My Profile
-          </h3>
-          <span id="kyc-badge" class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded">—</span>
-        </div>
-        <div class="space-y-2.5 text-sm">
-          <div class="flex justify-between gap-3">
-            <span class="text-muted">Name</span>
-            <span id="profile-name" class="text-gray-200">—</span>
-          </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted">Email</span>
-            <span id="profile-email" class="text-gray-200 break-all">—</span>
-          </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted">Mobile</span>
-            <span id="profile-mobile" class="text-gray-200">—</span>
-          </div>
-          <div class="flex justify-between gap-3">
-            <span class="text-muted">Joined</span>
-            <span id="profile-joined" class="text-gray-200 text-xs">—</span>
-          </div>
-        </div>
-        <button id="btn-open-kyc" class="mt-4 w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Complete KYC</button>
-        <p id="kyc-reject-reason" class="hidden mt-2 text-[11px] text-danger"></p>
+    <!-- Profile -->
+    <div id="profile-section" class="bg-card border border-line rounded-xl p-5 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold flex items-center gap-2">
+          <svg class="w-4 h-4 text-accent2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          My Profile
+        </h3>
+        <span id="kyc-badge" class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded">—</span>
       </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+        <div class="flex justify-between gap-3"><span class="text-muted">Name</span><span id="profile-name" class="text-gray-200">—</span></div>
+        <div class="flex justify-between gap-3"><span class="text-muted">Email</span><span id="profile-email" class="text-gray-200 break-all">—</span></div>
+        <div class="flex justify-between gap-3"><span class="text-muted">Mobile</span><span id="profile-mobile" class="text-gray-200">—</span></div>
+        <div class="flex justify-between gap-3"><span class="text-muted">Joined</span><span id="profile-joined" class="text-gray-200 text-xs">—</span></div>
+      </div>
+      <button id="btn-open-kyc" class="mt-4 w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Complete KYC</button>
+      <p id="kyc-reject-reason" class="hidden mt-2 text-[11px] text-danger"></p>
+    </div>
 
-      <!-- Referral Wallet -->
-      <div id="ref-wallet-section" class="bg-card border border-line rounded-xl p-5">
+    <!-- Two wallets -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <!-- Referral Commission Wallet -->
+      <div class="bg-card border border-line rounded-xl p-5">
         <div class="flex items-center justify-between mb-3">
           <h3 class="font-semibold flex items-center gap-2">
             <svg class="w-4 h-4 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
-            Referral Wallet
+            Referral Commission
           </h3>
-          <span class="text-[10px] uppercase tracking-wider text-muted">5% commission · 5% join bonus</span>
+          <span class="text-[10px] uppercase tracking-wider text-muted">5% on referee deposits</span>
+        </div>
+        <div class="bg-bg border border-line rounded-lg p-3 mb-3">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Earned</div>
+          <div class="text-2xl font-bold text-yellow-400">$<span id="ref-balance">0.00</span></div>
+          <div class="text-[11px] text-muted mt-1">3 qualifying referrals → +$10 achievement (60-day window)</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button data-wallet="commission" data-action="move" class="btn-wallet-move bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition">Move to Trading</button>
+          <button data-wallet="commission" data-action="withdraw" class="btn-wallet-withdraw bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition">Withdraw → USDT</button>
+        </div>
+        <p id="ref-hint" class="mt-2 text-[11px] text-muted leading-snug">Min $45 to use. KYC required to withdraw → USDT.</p>
+      </div>
+
+      <!-- Joining Bonus Wallet -->
+      <div class="bg-card border border-line rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+            Joining Bonus
+          </h3>
+          <span class="text-[10px] uppercase tracking-wider text-muted">5% on first deposit + admin top-ups</span>
         </div>
         <div class="bg-bg border border-line rounded-lg p-3 mb-3">
           <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Available</div>
-          <div class="text-2xl font-bold text-yellow-400">$<span id="ref-balance">0.00</span></div>
-          <div class="text-[11px] text-muted mt-1">Min payout $45 · 3 referrals → +$10 achievement bonus (60-day window)</div>
+          <div class="text-2xl font-bold text-accent">$<span id="bonus-balance">0.00</span></div>
+          <div class="text-[11px] text-muted mt-1">Joining bonus on first $50+ deposit; admin can top this up directly</div>
         </div>
         <div class="grid grid-cols-2 gap-2">
-          <button id="btn-ref-to-trading" class="bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition">Move to Trading</button>
-          <button id="btn-ref-withdraw" class="bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition">Withdraw → USDT</button>
+          <button data-wallet="bonus" data-action="move" class="btn-wallet-move bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition">Move to Trading</button>
+          <button data-wallet="bonus" data-action="withdraw" class="btn-wallet-withdraw bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition">Withdraw → USDT</button>
         </div>
-        <p id="ref-hint" class="mt-2 text-[11px] text-muted leading-snug">Earn 5% of every referee's first deposit ($50+). Min $45 to use this wallet.</p>
+        <p id="bonus-hint" class="mt-2 text-[11px] text-muted leading-snug">Min $45 to use. KYC required to withdraw → USDT.</p>
       </div>
     </div>
 

@@ -58,11 +58,14 @@ function txTypeLabel(t) {
     bot_trade: { label: 'Bot Trade', cls: 'text-purple-400' },
     usdt_buy: { label: 'Withdraw → Wallet', cls: 'text-yellow-400' },
     usdt_sell: { label: 'Add Fund', cls: 'text-accent2' },
-    ref_signup_bonus: { label: 'Signup Bonus', cls: 'text-accent' },
+    ref_signup_bonus: { label: 'Joining Bonus', cls: 'text-accent' },
     ref_commission: { label: 'Referral Commission', cls: 'text-yellow-400' },
     ref_achievement: { label: 'Achievement Bonus', cls: 'text-purple-400' },
-    ref_to_trading: { label: 'Ref → Trading', cls: 'text-accent2' },
-    ref_withdraw: { label: 'Ref Withdraw', cls: 'text-orange-400' },
+    ref_to_trading: { label: 'Commission → Trading', cls: 'text-accent2' },
+    ref_withdraw: { label: 'Commission Withdraw', cls: 'text-orange-400' },
+    bonus_to_trading: { label: 'Bonus → Trading', cls: 'text-accent2' },
+    bonus_withdraw: { label: 'Bonus Withdraw', cls: 'text-orange-400' },
+    bonus_credit: { label: 'Admin Bonus Credit', cls: 'text-yellow-400' },
   }[t] || { label: t, cls: 'text-gray-300' };
 }
 function fmt6(n) {
@@ -667,32 +670,40 @@ function renderProfile(u) {
   }
 }
 
-function renderRefWallet(u) {
-  const bal = Number(u.referral_balance || 0);
-  $('ref-balance').textContent = fmt(bal);
-  const moveBtn = $('btn-ref-to-trading');
-  const wdBtn = $('btn-ref-withdraw');
-  const hint = $('ref-hint');
+function renderWalletButtons(wallet, bal, kycApproved, hintEl) {
+  const moveBtn = document.querySelector(`.btn-wallet-move[data-wallet="${wallet}"]`);
+  const wdBtn   = document.querySelector(`.btn-wallet-withdraw[data-wallet="${wallet}"]`);
+  if (!moveBtn || !wdBtn) return;
   const hasMin = bal >= 45;
   if (!hasMin) {
     moveBtn.disabled = true;
-    moveBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
+    moveBtn.className = 'btn-wallet-move bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
     wdBtn.disabled = true;
-    wdBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
-    hint.textContent = `Earn 5% of every referee's first $50+ deposit. Need $45 to use this wallet (have $${fmt(bal)}).`;
+    wdBtn.className = 'btn-wallet-withdraw bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
+    if (hintEl) hintEl.textContent = `Need $45 to use this wallet (have $${fmt(bal)}).`;
   } else {
     moveBtn.disabled = false;
-    moveBtn.className = 'bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition';
-    if (u.kyc_status === 'approved') {
+    moveBtn.className = 'btn-wallet-move bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition';
+    if (kycApproved) {
       wdBtn.disabled = false;
-      wdBtn.className = 'bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition';
-      hint.textContent = `Ready to use — $${fmt(bal)} available.`;
+      wdBtn.className = 'btn-wallet-withdraw bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition';
+      if (hintEl) hintEl.textContent = `Ready to use — $${fmt(bal)} available.`;
     } else {
       wdBtn.disabled = true;
-      wdBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
-      hint.textContent = `Move-to-trading is open. KYC required to withdraw → USDT wallet.`;
+      wdBtn.className = 'btn-wallet-withdraw bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
+      if (hintEl) hintEl.textContent = `Move-to-trading is open. KYC required to withdraw → USDT.`;
     }
   }
+}
+
+function renderRefWallet(u) {
+  const commission = Number(u.referral_balance || 0);
+  const bonus = Number(u.bonus_balance || 0);
+  $('ref-balance').textContent = fmt(commission);
+  $('bonus-balance').textContent = fmt(bonus);
+  const kycOk = u.kyc_status === 'approved';
+  renderWalletButtons('commission', commission, kycOk, $('ref-hint'));
+  renderWalletButtons('bonus', bonus, kycOk, $('bonus-hint'));
 }
 
 // KYC modal
@@ -720,19 +731,26 @@ document.addEventListener('click', (e) => {
   }
   if (e.target.id === 'btn-kyc-cancel') $('modal-kyc').classList.add('hidden');
 
-  if (e.target.id === 'btn-ref-to-trading') {
-    const amt = prompt('Move how much from referral wallet to trading? (USD)');
-    if (!amt) return;
-    API.req('/api/me/ref/move-to-trading', { method: 'POST', body: JSON.stringify({ amount: Number(amt) }) })
-      .then(() => { toast(`Moved $${fmt(Number(amt))} to trading`, 'success'); loadDashboard(); })
-      .catch(err => toast(err.message, 'error'));
-  }
-  if (e.target.id === 'btn-ref-withdraw') {
-    const amt = prompt('Withdraw how much from referral wallet → USDT wallet? (USD)');
-    if (!amt) return;
-    API.req('/api/me/ref/withdraw', { method: 'POST', body: JSON.stringify({ amount: Number(amt) }) })
-      .then(d => { toast(`Withdrew $${fmt(d.usd_withdrawn)} → ${fmt6(d.usdt_received)} USDT`, 'success'); loadDashboard(); })
-      .catch(err => toast(err.message, 'error'));
+  // Referral commission / Joining bonus wallet actions (delegated by data-attr)
+  const walletBtn = e.target.closest('[data-wallet]');
+  if (walletBtn && !walletBtn.disabled) {
+    const wallet = walletBtn.dataset.wallet; // 'commission' or 'bonus'
+    const action = walletBtn.dataset.action; // 'move' or 'withdraw'
+    const labelMap = { commission: 'Referral Commission', bonus: 'Joining Bonus' };
+    const lbl = labelMap[wallet] || 'wallet';
+    if (action === 'move') {
+      const amt = prompt(`Move how much from ${lbl} wallet to trading? (USD)`);
+      if (!amt) return;
+      API.req(`/api/me/wallet/${wallet}/move-to-trading`, { method: 'POST', body: JSON.stringify({ amount: Number(amt) }) })
+        .then(() => { toast(`Moved $${fmt(Number(amt))} to trading`, 'success'); loadDashboard(); })
+        .catch(err => toast(err.message, 'error'));
+    } else if (action === 'withdraw') {
+      const amt = prompt(`Withdraw how much from ${lbl} wallet → USDT wallet? (USD)`);
+      if (!amt) return;
+      API.req(`/api/me/wallet/${wallet}/withdraw`, { method: 'POST', body: JSON.stringify({ amount: Number(amt) }) })
+        .then(d => { toast(`Withdrew $${fmt(d.usd_withdrawn)} → ${fmt6(d.usdt_received)} USDT`, 'success'); loadDashboard(); })
+        .catch(err => toast(err.message, 'error'));
+    }
   }
 });
 
@@ -988,8 +1006,9 @@ async function loadAdmin() {
           <td class="px-5 py-3 text-right font-mono text-yellow-400">${fmt6(x.usdt_balance || 0)}</td>
           <td class="px-5 py-3 text-muted text-xs">${fmtDate(x.created_at)}</td>
           <td class="px-5 py-3 pr-5 text-right whitespace-nowrap">
-            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition mr-1">Add USD</button>
-            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-usdt text-xs px-2.5 py-1.5 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 rounded hover:bg-yellow-400/20 transition">Add USDT</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition mr-1">+USD</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-usdt text-xs px-2.5 py-1.5 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 rounded hover:bg-yellow-400/20 transition mr-1">+USDT</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-bonus text-xs px-2.5 py-1.5 bg-purple-400/10 text-purple-400 border border-purple-400/30 rounded hover:bg-purple-400/20 transition">+Bonus</button>
           </td>
         `;
         ubody.appendChild(tr);
@@ -999,6 +1018,9 @@ async function loadAdmin() {
       });
       ubody.querySelectorAll('.btn-credit-usdt').forEach(b => {
         b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, 'usdt'));
+      });
+      ubody.querySelectorAll('.btn-credit-bonus').forEach(b => {
+        b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, 'bonus'));
       });
     }
 
@@ -1256,16 +1278,13 @@ function openCreditModal(id, label, mode = 'usd') {
   const amtInput = $('form-credit').querySelector('input[name="amount"]');
   if (mode === 'usdt') {
     if (title) title.textContent = 'Add USDT to Wallet';
-    if (amtInput) {
-      amtInput.placeholder = 'Amount in USDT (e.g. 100.000000)';
-      amtInput.step = '0.000001';
-    }
+    if (amtInput) { amtInput.placeholder = 'Amount in USDT (e.g. 100.000000)'; amtInput.step = '0.000001'; }
+  } else if (mode === 'bonus') {
+    if (title) title.textContent = 'Add Joining Bonus';
+    if (amtInput) { amtInput.placeholder = 'Amount in USD (joining-bonus wallet)'; amtInput.step = '0.01'; }
   } else {
     if (title) title.textContent = 'Add USD Credit';
-    if (amtInput) {
-      amtInput.placeholder = 'Amount in USD';
-      amtInput.step = '0.01';
-    }
+    if (amtInput) { amtInput.placeholder = 'Amount in USD'; amtInput.step = '0.01'; }
   }
   const txInput = $('credit-txid-input');
   if (txInput) txInput.classList.add('hidden');
@@ -1278,9 +1297,9 @@ $('form-credit').addEventListener('submit', async (e) => {
   if (!currentCreditUserId) return;
   const fd = new FormData(e.target);
   try {
-    const path = currentCreditMode === 'usdt'
-      ? `/api/admin/users/${currentCreditUserId}/credit-usdt`
-      : `/api/admin/users/${currentCreditUserId}/credit`;
+    const path = currentCreditMode === 'usdt'  ? `/api/admin/users/${currentCreditUserId}/credit-usdt`
+               : currentCreditMode === 'bonus' ? `/api/admin/users/${currentCreditUserId}/credit-bonus`
+               :                                 `/api/admin/users/${currentCreditUserId}/credit`;
     await API.req(path, {
       method: 'POST',
       body: JSON.stringify({
@@ -1289,7 +1308,8 @@ $('form-credit').addEventListener('submit', async (e) => {
       }),
     });
     $('modal-credit').classList.add('hidden');
-    toast(currentCreditMode === 'usdt' ? 'USDT wallet credited' : 'USD balance updated', 'success');
+    const msg = { usdt: 'USDT wallet credited', bonus: 'Joining-bonus wallet credited' }[currentCreditMode] || 'USD balance updated';
+    toast(msg, 'success');
     loadAdmin();
   } catch (err) {
     toast(err.message, 'error');

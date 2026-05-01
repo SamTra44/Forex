@@ -96,6 +96,7 @@ db.exec(`
     usdt_balance REAL NOT NULL DEFAULT 0,
     usdt_address TEXT UNIQUE,
     referral_balance REAL NOT NULL DEFAULT 0,
+    bonus_balance REAL NOT NULL DEFAULT 0,
     total_deposits REAL NOT NULL DEFAULT 0,
     qualifying_deposit_at TEXT,
     achievement_paid INTEGER NOT NULL DEFAULT 0,
@@ -132,6 +133,7 @@ try { db.exec('ALTER TABLE users ADD COLUMN deposit_address TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN usdt_balance REAL NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN usdt_address TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN referral_balance REAL NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN bonus_balance REAL NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN total_deposits REAL NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN qualifying_deposit_at TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN achievement_paid INTEGER NOT NULL DEFAULT 0'); } catch {}
@@ -272,7 +274,8 @@ function publicUser(u) {
     balance: Number(u.balance),
     usdt_balance: Number(u.usdt_balance || 0),
     usdt_address: u.usdt_address || null,
-    referral_balance: Number(u.referral_balance || 0),
+    referral_balance: Number(u.referral_balance || 0),  // commission earned by referring
+    bonus_balance: Number(u.bonus_balance || 0),        // joining bonus + admin direct credits
     total_deposits: Number(u.total_deposits || 0),
     referral_code: u.referral_code,
     referred_by: u.referred_by,
@@ -433,46 +436,50 @@ app.get('/api/me/kyc', authRequired, (req, res) => {
   });
 });
 
-// ---------- Referral wallet ----------
-function ensureKycApproved(user) {
-  return user.kyc_status === 'approved';
-}
+// ---------- Referral / Joining-Bonus wallets (shared logic) ----------
+function ensureKycApproved(user) { return user.kyc_status === 'approved'; }
 
-// Move referral wallet → trading USD balance (no KYC needed, internal restructure).
-app.post('/api/me/ref/move-to-trading', authRequired, (req, res) => {
+// Map UI wallet type → DB column + transaction prefix.
+const WALLETS = {
+  commission: { col: 'referral_balance', label: 'referral commission', txMove: 'ref_to_trading',  txWd: 'ref_withdraw' },
+  bonus:      { col: 'bonus_balance',    label: 'joining bonus',       txMove: 'bonus_to_trading', txWd: 'bonus_withdraw' },
+};
+
+function walletMove(req, res) {
+  const cfg = WALLETS[req.params.type];
+  if (!cfg) return res.status(400).json({ error: 'invalid wallet type' });
   const amount = Number(req.body?.amount);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'not found' });
-  if (Number(user.referral_balance) < REFERRAL_WALLET_MIN_PAYOUT) {
-    return res.status(400).json({ error: `minimum $${REFERRAL_WALLET_MIN_PAYOUT} required in referral wallet` });
+  const bal = Number(user[cfg.col] || 0);
+  if (bal < REFERRAL_WALLET_MIN_PAYOUT) {
+    return res.status(400).json({ error: `minimum $${REFERRAL_WALLET_MIN_PAYOUT} required in ${cfg.label} wallet` });
   }
-  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(user.referral_balance) + 1e-9) {
+  if (!Number.isFinite(amount) || amount <= 0 || amount > bal + 1e-9) {
     return res.status(400).json({ error: 'invalid amount' });
   }
   const amt = +Number(amount).toFixed(2);
   withTransaction(() => {
-    db.prepare('UPDATE users SET referral_balance = referral_balance - ?, balance = balance + ? WHERE id = ?').run(amt, amt, user.id);
-    db.prepare(`
-      INSERT INTO transactions (user_id, type, amount, note)
-      VALUES (?, 'ref_to_trading', ?, ?)
-    `).run(user.id, amt, `Moved $${amt.toFixed(2)} from referral wallet to trading`);
+    db.prepare(`UPDATE users SET ${cfg.col} = ${cfg.col} - ?, balance = balance + ? WHERE id = ?`).run(amt, amt, user.id);
+    db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, ?, ?, ?)`)
+      .run(user.id, cfg.txMove, amt, `Moved $${amt.toFixed(2)} from ${cfg.label} wallet to trading`);
   });
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ user: publicUser(updated) });
-});
+}
 
-// Withdraw from referral wallet → on-platform USDT wallet (KYC required).
-app.post('/api/me/ref/withdraw', authRequired, (req, res) => {
+function walletWithdraw(req, res) {
+  const cfg = WALLETS[req.params.type];
+  if (!cfg) return res.status(400).json({ error: 'invalid wallet type' });
   const amount = Number(req.body?.amount);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'not found' });
-  if (!ensureKycApproved(user)) {
-    return res.status(403).json({ error: 'complete KYC verification before withdrawing' });
+  if (!ensureKycApproved(user)) return res.status(403).json({ error: 'complete KYC verification before withdrawing' });
+  const bal = Number(user[cfg.col] || 0);
+  if (bal < REFERRAL_WALLET_MIN_PAYOUT) {
+    return res.status(400).json({ error: `minimum $${REFERRAL_WALLET_MIN_PAYOUT} required in ${cfg.label} wallet` });
   }
-  if (Number(user.referral_balance) < REFERRAL_WALLET_MIN_PAYOUT) {
-    return res.status(400).json({ error: `minimum $${REFERRAL_WALLET_MIN_PAYOUT} required in referral wallet` });
-  }
-  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(user.referral_balance) + 1e-9) {
+  if (!Number.isFinite(amount) || amount <= 0 || amount > bal + 1e-9) {
     return res.status(400).json({ error: 'invalid amount' });
   }
   ensureUsdtAddress(user.id);
@@ -480,15 +487,20 @@ app.post('/api/me/ref/withdraw', authRequired, (req, res) => {
   const price = usdtPriceCache.price;
   const usdt = +(usd / price).toFixed(6);
   withTransaction(() => {
-    db.prepare('UPDATE users SET referral_balance = referral_balance - ?, usdt_balance = usdt_balance + ? WHERE id = ?').run(usd, usdt, user.id);
-    db.prepare(`
-      INSERT INTO transactions (user_id, type, amount, usdt_amount, note)
-      VALUES (?, 'ref_withdraw', ?, ?, ?)
-    `).run(user.id, -usd, usdt, `Withdrew $${usd.toFixed(2)} ref → ${usdt.toFixed(6)} USDT @ $${price.toFixed(4)}`);
+    db.prepare(`UPDATE users SET ${cfg.col} = ${cfg.col} - ?, usdt_balance = usdt_balance + ? WHERE id = ?`).run(usd, usdt, user.id);
+    db.prepare(`INSERT INTO transactions (user_id, type, amount, usdt_amount, note) VALUES (?, ?, ?, ?, ?)`)
+      .run(user.id, cfg.txWd, -usd, usdt, `Withdrew $${usd.toFixed(2)} ${cfg.label} → ${usdt.toFixed(6)} USDT @ $${price.toFixed(4)}`);
   });
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ user: publicUser(updated), usd_withdrawn: usd, usdt_received: usdt });
-});
+}
+
+app.post('/api/me/wallet/:type/move-to-trading', authRequired, walletMove);
+app.post('/api/me/wallet/:type/withdraw',        authRequired, walletWithdraw);
+
+// Legacy aliases (existing UI / clients may still POST these).
+app.post('/api/me/ref/move-to-trading', authRequired, (req, res) => { req.params.type = 'commission'; walletMove(req, res); });
+app.post('/api/me/ref/withdraw',        authRequired, (req, res) => { req.params.type = 'commission'; walletWithdraw(req, res); });
 
 // ---------- Referral bonus engine (called on first qualifying deposit) ----------
 function applyReferralBonuses(userId, depositAmount) {
@@ -502,14 +514,14 @@ function applyReferralBonuses(userId, depositAmount) {
   // Mark this deposit as the qualifying one
   db.prepare("UPDATE users SET qualifying_deposit_at = datetime('now') WHERE id = ?").run(userId);
 
-  // Joining bonus to the new user (5% of qualifying deposit) → their referral wallet
+  // Joining bonus to the new user (5% of qualifying deposit) → their JOINING BONUS wallet
   const joinBonus = +(depositAmount * SIGNUP_BONUS_PCT).toFixed(2);
   if (joinBonus > 0) {
-    db.prepare('UPDATE users SET referral_balance = referral_balance + ? WHERE id = ?').run(joinBonus, userId);
+    db.prepare('UPDATE users SET bonus_balance = bonus_balance + ? WHERE id = ?').run(joinBonus, userId);
     db.prepare(`
       INSERT INTO transactions (user_id, type, amount, note)
       VALUES (?, 'ref_signup_bonus', ?, ?)
-    `).run(userId, joinBonus, `Signup bonus 5% of $${depositAmount.toFixed(2)} qualifying deposit`);
+    `).run(userId, joinBonus, `Joining bonus 5% of $${depositAmount.toFixed(2)} qualifying deposit`);
     events.push({ to: userId, kind: 'signup_bonus', amount: joinBonus });
   }
 
@@ -683,6 +695,28 @@ app.post('/api/admin/users', authRequired, adminRequired, (req, res) => {
   `).run(normEmail, hash, String(name).trim(), code, depAddr, usdtAddr);
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
   res.json({ user: publicUser(user) });
+});
+
+// Admin: credit (or debit) a user's joining-bonus wallet directly.
+app.post('/api/admin/users/:id/credit-bonus', authRequired, adminRequired, (req, res) => {
+  const userId = Number(req.params.id);
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: 'invalid amount' });
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!target) return res.status(404).json({ error: 'user not found' });
+  const newBal = Number(target.bonus_balance || 0) + amount;
+  if (newBal < -1e-9) return res.status(400).json({ error: 'cannot debit below 0' });
+  const usd = +Number(amount).toFixed(2);
+  const note = req.body?.note || (amount > 0
+    ? `Joining-bonus credit by ${req.user.email}`
+    : `Joining-bonus debit by ${req.user.email}`);
+  withTransaction(() => {
+    db.prepare('UPDATE users SET bonus_balance = bonus_balance + ? WHERE id = ?').run(usd, userId);
+    db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bonus_credit', ?, ?)`)
+      .run(userId, usd, note);
+  });
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  res.json({ user: publicUser(updated) });
 });
 
 // Admin: credit (or debit, with negative amount) a user's USDT wallet.
