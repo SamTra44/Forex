@@ -713,18 +713,20 @@ function renderUsdt(user, priceObj) {
   usdtState.address = user.usdt_address || '';
 
   const usdEquiv = bal * price;
-  $('stat-usdt').textContent = fmt6(bal);
-  $('stat-usdt-usd').textContent = fmt(usdEquiv);
-  $('stat-usdt-price').textContent = '$' + price.toFixed(4);
+  // Use safe setters so a removed/renamed DOM id doesn't crash the rest of loadDashboard.
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('stat-usdt', fmt6(bal));
+  set('stat-usdt-usd', fmt(usdEquiv));
+  set('stat-usdt-price', '$' + price.toFixed(4));
 
-  $('usdt-balance-big').textContent = fmt6(bal);
-  $('usdt-balance-usd').textContent = fmt(usdEquiv);
-  $('usdt-usd-balance').textContent = fmt(usdBal);
-  $('usdt-live-price').textContent = '$' + price.toFixed(4);
-  $('usdt-price-source').textContent = source === 'coingecko' ? 'CoinGecko' : 'Cached';
+  set('usdt-balance-big', fmt6(bal));
+  set('usdt-balance-usd', fmt(usdEquiv));
+  set('usdt-usd-balance', fmt(usdBal));
+  set('usdt-live-price', '$' + price.toFixed(4));
+  set('usdt-price-source', source === 'coingecko' ? 'CoinGecko' : 'Cached');
 
-  // Address card
-  $('usdt-address').textContent = user.usdt_address || '--';
+  // Address card — show actual TQ... address (not '--')
+  set('usdt-address', user.usdt_address || 'Loading…');
 
   // Refresh tab previews
   recalcUsdtPreviews();
