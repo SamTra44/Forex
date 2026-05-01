@@ -340,7 +340,6 @@
           <div class="flex gap-1 mb-4 border-b border-line">
             <button data-usdt-tab="buy" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-accent text-accent">Withdraw to Wallet</button>
             <button data-usdt-tab="sell" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Add Fund to Trading</button>
-            <button data-usdt-tab="send" class="usdt-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Send to User</button>
           </div>
 
           <!-- Withdraw (Trading USD → Platform USDT Wallet) -->
@@ -380,25 +379,6 @@
             </form>
           </div>
 
-          <!-- Send (internal) -->
-          <div id="usdt-pane-send" class="usdt-pane hidden">
-            <p class="text-xs text-muted mb-3">Send USDT to another QuantEdge user. Internal-only · instant · 0% fee.</p>
-            <form id="form-usdt-send" class="space-y-3">
-              <div>
-                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Recipient USDT Address</label>
-                <input type="text" name="to_address" required placeholder="TQ..." class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" id="usdt-send-addr" />
-                <p id="usdt-send-lookup" class="hidden mt-1.5 text-[11px]"></p>
-              </div>
-              <div>
-                <label class="block text-[11px] uppercase tracking-wider text-muted mb-1 flex justify-between"><span>Amount</span><button type="button" id="btn-usdt-send-max" class="text-[10px] text-accent hover:underline normal-case tracking-normal">Max</button></label>
-                <input type="number" name="usdt_amount" min="0.01" step="0.000001" required placeholder="0.000000" class="w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-accent" />
-              </div>
-              <div class="bg-bg/60 border border-yellow-400/20 rounded-lg p-2.5 text-[11px] text-gray-300">
-                <span class="text-yellow-400 font-semibold">Instant · 0% fee</span> — recipient must be a QuantEdge user. External addresses are not supported.
-              </div>
-              <button type="submit" class="w-full bg-yellow-400 hover:bg-yellow-400/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Send USDT</button>
-            </form>
-          </div>
         </div>
 
         <!-- Right: Internal address card -->
@@ -416,7 +396,62 @@
       </div>
     </div>
 
-    <!-- Live trades feed + Deposit/Referral -->
+    <!-- Profile + Referral Wallet -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <!-- Profile -->
+      <div id="profile-section" class="bg-card border border-line rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold flex items-center gap-2">
+            <svg class="w-4 h-4 text-accent2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            My Profile
+          </h3>
+          <span id="kyc-badge" class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded">—</span>
+        </div>
+        <div class="space-y-2.5 text-sm">
+          <div class="flex justify-between gap-3">
+            <span class="text-muted">Name</span>
+            <span id="profile-name" class="text-gray-200">—</span>
+          </div>
+          <div class="flex justify-between gap-3">
+            <span class="text-muted">Email</span>
+            <span id="profile-email" class="text-gray-200 break-all">—</span>
+          </div>
+          <div class="flex justify-between gap-3">
+            <span class="text-muted">Mobile</span>
+            <span id="profile-mobile" class="text-gray-200">—</span>
+          </div>
+          <div class="flex justify-between gap-3">
+            <span class="text-muted">Joined</span>
+            <span id="profile-joined" class="text-gray-200 text-xs">—</span>
+          </div>
+        </div>
+        <button id="btn-open-kyc" class="mt-4 w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Complete KYC</button>
+        <p id="kyc-reject-reason" class="hidden mt-2 text-[11px] text-danger"></p>
+      </div>
+
+      <!-- Referral Wallet -->
+      <div id="ref-wallet-section" class="bg-card border border-line rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold flex items-center gap-2">
+            <svg class="w-4 h-4 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+            Referral Wallet
+          </h3>
+          <span class="text-[10px] uppercase tracking-wider text-muted">5% commission · 5% join bonus</span>
+        </div>
+        <div class="bg-bg border border-line rounded-lg p-3 mb-3">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Available</div>
+          <div class="text-2xl font-bold text-yellow-400">$<span id="ref-balance">0.00</span></div>
+          <div class="text-[11px] text-muted mt-1">Min payout $45 · 3 referrals → +$10 achievement bonus (60-day window)</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btn-ref-to-trading" class="bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition">Move to Trading</button>
+          <button id="btn-ref-withdraw" class="bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition">Withdraw → USDT</button>
+        </div>
+        <p id="ref-hint" class="mt-2 text-[11px] text-muted leading-snug">Earn 5% of every referee's first deposit ($300+). Min $45 to use this wallet.</p>
+      </div>
+    </div>
+
+    <!-- Live trades feed + Referral Code -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
       <div class="lg:col-span-2 bg-card border border-line rounded-xl">
         <div class="px-5 py-3 border-b border-line flex items-center justify-between">
@@ -521,6 +556,10 @@
       <button data-admin-tab="withdrawals" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition flex items-center gap-1.5">
         Withdrawal Requests
         <span id="wd-pending-badge" class="hidden text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded font-mono">0</span>
+      </button>
+      <button data-admin-tab="kyc" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition flex items-center gap-1.5">
+        KYC Reviews
+        <span id="kyc-pending-badge" class="hidden text-[10px] px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded font-mono">0</span>
       </button>
       <button data-admin-tab="backup" class="admin-tab px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition">Backup &amp; Migration</button>
     </div>
@@ -744,6 +783,58 @@
       </div>
     </div>
     <!-- /Tab: Backup & Migration -->
+
+    <!-- Tab: KYC Reviews -->
+    <div id="admin-tab-kyc" class="hidden">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Pending</div>
+          <div class="text-2xl font-bold text-yellow-400" id="kyc-stat-pending">0</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Approved</div>
+          <div class="text-2xl font-bold text-accent" id="kyc-stat-approved">0</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Rejected</div>
+          <div class="text-2xl font-bold text-danger" id="kyc-stat-rejected">0</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4">
+          <div class="text-xs uppercase tracking-wider text-muted mb-2">Not Submitted</div>
+          <div class="text-2xl font-bold text-muted" id="kyc-stat-notsub">0</div>
+        </div>
+      </div>
+
+      <div class="bg-card border border-line rounded-xl">
+        <div class="px-5 py-4 border-b border-line flex items-center justify-between flex-wrap gap-2">
+          <h3 class="font-semibold">KYC Submissions</h3>
+          <div class="flex items-center gap-2">
+            <select id="kyc-filter" class="bg-bg border border-line rounded px-2.5 py-1.5 text-xs focus:outline-none">
+              <option value="">All</option>
+              <option value="pending" selected>Pending only</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button id="btn-refresh-kyc" class="text-xs px-3 py-1.5 bg-bg border border-line rounded hover:border-accent transition">Refresh</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto scrollable">
+          <table class="w-full text-sm">
+            <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted">
+              <tr>
+                <th class="text-left px-5 py-3">Submitted</th>
+                <th class="text-left px-5 py-3">User</th>
+                <th class="text-left px-5 py-3">Mobile</th>
+                <th class="text-left px-5 py-3">Status</th>
+                <th class="text-right px-5 py-3 pr-5">Action</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-kyc"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- /Tab: KYC Reviews -->
   </main>
 </div>
 
@@ -784,6 +875,89 @@
       <div class="flex gap-2">
         <button type="button" id="btn-reject-wd-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Cancel</button>
         <button type="submit" class="flex-1 bg-danger hover:bg-danger/90 text-white font-semibold py-2.5 rounded-lg text-sm">Reject &amp; Refund</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- KYC modal -->
+<div id="modal-kyc" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4 overflow-y-auto py-8">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-lg w-full">
+    <h3 class="text-lg font-semibold mb-1">Complete KYC</h3>
+    <p class="text-sm text-muted mb-4">Upload Aadhar, PAN, and a selfie. Admin reviews within 24 hrs. Required to withdraw.</p>
+    <form id="form-kyc" class="space-y-3">
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Mobile Number</label>
+        <input type="tel" name="mobile_number" required placeholder="+91 9876543210" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-accent" />
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Aadhar Card (PNG/JPG, ≤ 600 KB)</label>
+        <input type="file" name="aadhar" accept="image/png,image/jpeg" required class="block w-full text-xs text-gray-300 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-accent2 file:text-white file:text-xs file:font-semibold hover:file:bg-accent2/90" />
+        <img class="kyc-preview hidden mt-2 max-h-32 rounded border border-line" data-for="aadhar" />
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">PAN Card</label>
+        <input type="file" name="pan" accept="image/png,image/jpeg" required class="block w-full text-xs text-gray-300 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-accent2 file:text-white file:text-xs file:font-semibold hover:file:bg-accent2/90" />
+        <img class="kyc-preview hidden mt-2 max-h-32 rounded border border-line" data-for="pan" />
+      </div>
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider text-muted mb-1">Selfie</label>
+        <input type="file" name="selfie" accept="image/png,image/jpeg" required class="block w-full text-xs text-gray-300 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:bg-accent2 file:text-white file:text-xs file:font-semibold hover:file:bg-accent2/90" />
+        <img class="kyc-preview hidden mt-2 max-h-32 rounded border border-line" data-for="selfie" />
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="button" id="btn-kyc-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Cancel</button>
+        <button type="submit" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Submit for Review</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Admin · KYC review modal -->
+<div id="modal-kyc-admin" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4 overflow-y-auto py-8">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-3xl w-full">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-lg font-semibold">KYC Review</h3>
+      <span id="kyc-admin-status" class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded">—</span>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 text-sm">
+      <div class="bg-bg border border-line rounded p-3">
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Name</div>
+        <div id="kyc-admin-name">—</div>
+      </div>
+      <div class="bg-bg border border-line rounded p-3">
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Email</div>
+        <div id="kyc-admin-email" class="break-all">—</div>
+      </div>
+      <div class="bg-bg border border-line rounded p-3">
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Mobile</div>
+        <div id="kyc-admin-mobile">—</div>
+      </div>
+      <div class="bg-bg border border-line rounded p-3">
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Submitted</div>
+        <div id="kyc-admin-submitted" class="text-xs">—</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-1">Aadhar</div>
+        <img id="kyc-admin-aadhar" class="w-full max-h-48 object-contain rounded border border-line bg-bg" />
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-1">PAN</div>
+        <img id="kyc-admin-pan" class="w-full max-h-48 object-contain rounded border border-line bg-bg" />
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mb-1">Selfie</div>
+        <img id="kyc-admin-selfie" class="w-full max-h-48 object-contain rounded border border-line bg-bg" />
+      </div>
+    </div>
+    <form id="form-kyc-action" class="space-y-3">
+      <input type="text" name="reason" placeholder="Reject reason (optional)" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-danger" />
+      <div class="flex gap-2">
+        <button type="button" id="btn-kyc-admin-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Close</button>
+        <button type="button" id="btn-kyc-admin-reject" class="flex-1 bg-danger hover:bg-danger/90 text-white font-semibold py-2.5 rounded-lg text-sm">Reject</button>
+        <button type="button" id="btn-kyc-admin-approve" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Approve</button>
       </div>
     </form>
   </div>

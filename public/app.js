@@ -56,11 +56,13 @@ function txTypeLabel(t) {
     referral_bonus: { label: 'Referral Bonus', cls: 'text-accent' },
     admin_credit: { label: 'Admin Credit', cls: 'text-yellow-400' },
     bot_trade: { label: 'Bot Trade', cls: 'text-purple-400' },
-    usdt_buy: { label: 'USDT Buy', cls: 'text-yellow-400' },
-    usdt_sell: { label: 'USDT Sell', cls: 'text-accent2' },
-    usdt_send: { label: 'USDT Sent', cls: 'text-orange-400' },
-    usdt_receive: { label: 'USDT Received', cls: 'text-accent' },
-    usdt_withdraw: { label: 'USDT Withdraw', cls: 'text-orange-400' },
+    usdt_buy: { label: 'Withdraw → Wallet', cls: 'text-yellow-400' },
+    usdt_sell: { label: 'Add Fund', cls: 'text-accent2' },
+    ref_signup_bonus: { label: 'Signup Bonus', cls: 'text-accent' },
+    ref_commission: { label: 'Referral Commission', cls: 'text-yellow-400' },
+    ref_achievement: { label: 'Achievement Bonus', cls: 'text-purple-400' },
+    ref_to_trading: { label: 'Ref → Trading', cls: 'text-accent2' },
+    ref_withdraw: { label: 'Ref Withdraw', cls: 'text-orange-400' },
   }[t] || { label: t, cls: 'text-gray-300' };
 }
 function fmt6(n) {
@@ -315,6 +317,8 @@ async function loadDashboard() {
     $('greet-name').textContent = u.name.split(' ')[0];
     animateBalance($('stat-balance'), Number(u.balance));
     renderUsdt(u, me.usdt_price);
+    renderProfile(u);
+    renderRefWallet(u);
     $('stat-referrals').textContent = refs.referrals.length;
     $('referral-count-badge').textContent = refs.referrals.length;
     $('referral-code').textContent = u.referral_code;
@@ -616,6 +620,156 @@ function initNetworkPanel() {
   networkState.logTimer = setInterval(tickLog, 1100);
 }
 
+// ---------- Profile + Referral Wallet + KYC ----------
+function renderProfile(u) {
+  $('profile-name').textContent = u.name || '—';
+  $('profile-email').textContent = u.email || '—';
+  $('profile-mobile').textContent = u.mobile_number || 'Not set';
+  $('profile-joined').textContent = fmtDate(u.created_at);
+
+  const badge = $('kyc-badge');
+  const btn = $('btn-open-kyc');
+  const reason = $('kyc-reject-reason');
+  reason.classList.add('hidden');
+
+  switch (u.kyc_status) {
+    case 'approved':
+      badge.textContent = '✓ KYC Verified';
+      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/30';
+      btn.textContent = 'KYC Verified';
+      btn.disabled = true;
+      btn.className = 'mt-4 w-full bg-accent/20 text-accent font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed';
+      break;
+    case 'pending':
+      badge.textContent = '⏳ Under Review';
+      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400 border border-yellow-400/30';
+      btn.textContent = 'Awaiting Admin Review';
+      btn.disabled = true;
+      btn.className = 'mt-4 w-full bg-yellow-400/20 text-yellow-400 font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed';
+      break;
+    case 'rejected':
+      badge.textContent = '✗ Rejected';
+      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-danger/10 text-danger border border-danger/30';
+      btn.textContent = 'Resubmit KYC';
+      btn.disabled = false;
+      btn.className = 'mt-4 w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition';
+      if (u.kyc_reject_reason) {
+        reason.classList.remove('hidden');
+        reason.textContent = 'Reason: ' + u.kyc_reject_reason;
+      }
+      break;
+    default:
+      badge.textContent = 'Not Verified';
+      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-line text-muted';
+      btn.textContent = 'Complete KYC';
+      btn.disabled = false;
+      btn.className = 'mt-4 w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition';
+  }
+}
+
+function renderRefWallet(u) {
+  const bal = Number(u.referral_balance || 0);
+  $('ref-balance').textContent = fmt(bal);
+  const moveBtn = $('btn-ref-to-trading');
+  const wdBtn = $('btn-ref-withdraw');
+  const hint = $('ref-hint');
+  const hasMin = bal >= 45;
+  if (!hasMin) {
+    moveBtn.disabled = true;
+    moveBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
+    wdBtn.disabled = true;
+    wdBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
+    hint.textContent = `Earn 5% of every referee's first $300+ deposit. Need $45 to use this wallet (have $${fmt(bal)}).`;
+  } else {
+    moveBtn.disabled = false;
+    moveBtn.className = 'bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition';
+    if (u.kyc_status === 'approved') {
+      wdBtn.disabled = false;
+      wdBtn.className = 'bg-accent hover:bg-accent/90 text-bg font-semibold py-2 rounded-lg text-xs transition';
+      hint.textContent = `Ready to use — $${fmt(bal)} available.`;
+    } else {
+      wdBtn.disabled = true;
+      wdBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
+      hint.textContent = `Move-to-trading is open. KYC required to withdraw → USDT wallet.`;
+    }
+  }
+}
+
+// KYC modal
+function readImageAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return reject(new Error('No file'));
+    if (file.size > 600 * 1024) return reject(new Error(`${file.name} is too large (max 600 KB)`));
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('read failed'));
+    r.readAsDataURL(file);
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'btn-open-kyc') {
+    const u = API.user();
+    $('form-kyc').reset();
+    document.querySelectorAll('.kyc-preview').forEach(img => { img.classList.add('hidden'); img.src = ''; });
+    if (u && u.mobile_number) {
+      $('form-kyc').querySelector('input[name="mobile_number"]').value = u.mobile_number;
+    }
+    $('modal-kyc').classList.remove('hidden');
+  }
+  if (e.target.id === 'btn-kyc-cancel') $('modal-kyc').classList.add('hidden');
+
+  if (e.target.id === 'btn-ref-to-trading') {
+    const amt = prompt('Move how much from referral wallet to trading? (USD)');
+    if (!amt) return;
+    API.req('/api/me/ref/move-to-trading', { method: 'POST', body: JSON.stringify({ amount: Number(amt) }) })
+      .then(() => { toast(`Moved $${fmt(Number(amt))} to trading`, 'success'); loadDashboard(); })
+      .catch(err => toast(err.message, 'error'));
+  }
+  if (e.target.id === 'btn-ref-withdraw') {
+    const amt = prompt('Withdraw how much from referral wallet → USDT wallet? (USD)');
+    if (!amt) return;
+    API.req('/api/me/ref/withdraw', { method: 'POST', body: JSON.stringify({ amount: Number(amt) }) })
+      .then(d => { toast(`Withdrew $${fmt(d.usd_withdrawn)} → ${fmt6(d.usdt_received)} USDT`, 'success'); loadDashboard(); })
+      .catch(err => toast(err.message, 'error'));
+  }
+});
+
+// File previews + KYC submit
+document.addEventListener('change', async (e) => {
+  if (e.target && e.target.matches('#form-kyc input[type="file"]')) {
+    const name = e.target.name;
+    const file = e.target.files[0];
+    const img = document.querySelector(`.kyc-preview[data-for="${name}"]`);
+    if (!file || !img) return;
+    try {
+      const url = await readImageAsDataUrl(file);
+      img.src = url;
+      img.classList.remove('hidden');
+    } catch (err) { toast(err.message, 'error'); }
+  }
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target && e.target.id === 'form-kyc') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const aadhar = await readImageAsDataUrl(fd.get('aadhar'));
+      const pan = await readImageAsDataUrl(fd.get('pan'));
+      const selfie = await readImageAsDataUrl(fd.get('selfie'));
+      await API.req('/api/me/kyc', {
+        method: 'POST',
+        body: JSON.stringify({ aadhar, pan, selfie, mobile_number: fd.get('mobile_number') }),
+      });
+      $('modal-kyc').classList.add('hidden');
+      toast('KYC submitted — under review', 'success');
+      loadDashboard();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+});
+
 // ---------- Deposit notifications (admin-credited) ----------
 let lastDepositTxId = 0;
 
@@ -723,30 +877,6 @@ document.addEventListener('input', (e) => {
   )) {
     recalcUsdtPreviews();
   }
-  // Debounced recipient lookup for Send tab
-  if (e.target.id === 'usdt-send-addr') {
-    const addr = e.target.value.trim();
-    const out = $('usdt-send-lookup');
-    if (usdtState.lookupTimer) clearTimeout(usdtState.lookupTimer);
-    if (!addr || addr.length < 10) {
-      out.classList.add('hidden');
-      return;
-    }
-    usdtState.lookupTimer = setTimeout(async () => {
-      try {
-        const data = await API.req('/api/usdt/lookup?address=' + encodeURIComponent(addr));
-        out.classList.remove('hidden');
-        if (data.is_self) {
-          out.innerHTML = `<span class="text-danger">⚠ This is your own address</span>`;
-        } else {
-          out.innerHTML = `<span class="text-accent">✓ ${escapeHtml(data.name)} · ${escapeHtml(data.email)}</span>`;
-        }
-      } catch (err) {
-        out.classList.remove('hidden');
-        out.innerHTML = `<span class="text-danger">✗ Recipient not found</span>`;
-      }
-    }, 350);
-  }
 });
 
 // Max buttons
@@ -754,10 +884,6 @@ document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'btn-usdt-sell-max') {
     const inp = document.querySelector('.usdt-sell-usdt');
     if (inp) { inp.value = usdtState.balance.toFixed(6); recalcUsdtPreviews(); }
-  }
-  if (e.target && e.target.id === 'btn-usdt-send-max') {
-    const inp = document.querySelector('#form-usdt-send input[name="usdt_amount"]');
-    if (inp) inp.value = usdtState.balance.toFixed(6);
   }
   if (e.target && e.target.id === 'btn-copy-usdt-addr') {
     if (!usdtState.address) return;
@@ -793,24 +919,6 @@ document.addEventListener('submit', async (e) => {
       });
       e.target.reset();
       toast(`Sold USDT · received $${fmt(data.usd_received)}`, 'success');
-      loadDashboard();
-    } catch (err) { toast(err.message, 'error'); }
-    return;
-  }
-  if (e.target && e.target.id === 'form-usdt-send') {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    try {
-      const data = await API.req('/api/usdt/send', {
-        method: 'POST',
-        body: JSON.stringify({
-          usdt_amount: Number(fd.get('usdt_amount')),
-          to_address: fd.get('to_address'),
-        }),
-      });
-      e.target.reset();
-      $('usdt-send-lookup').classList.add('hidden');
-      toast(`Sent ${fmt6(data.amount)} USDT to ${data.sent_to.email}`, 'success');
       loadDashboard();
     } catch (err) { toast(err.message, 'error'); }
     return;
@@ -941,8 +1049,11 @@ function switchAdminTab(tab) {
   $('admin-tab-withdrawals').classList.toggle('hidden', tab !== 'withdrawals');
   const bkPane = $('admin-tab-backup');
   if (bkPane) bkPane.classList.toggle('hidden', tab !== 'backup');
+  const kycPane = $('admin-tab-kyc');
+  if (kycPane) kycPane.classList.toggle('hidden', tab !== 'kyc');
   if (tab === 'withdrawals') loadWithdrawals();
   if (tab === 'backup') loadBackups();
+  if (tab === 'kyc') loadAdminKyc();
 }
 
 document.querySelectorAll('.admin-tab').forEach(b => {
@@ -1324,6 +1435,117 @@ document.addEventListener('submit', async (e) => {
       toast(err.message, 'error');
     }
   }
+});
+
+// ---------- Admin · KYC Reviews ----------
+function kycStatusBadge(s) {
+  if (s === 'pending')  return `<span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400 border border-yellow-400/30">Pending</span>`;
+  if (s === 'approved') return `<span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/30">Approved</span>`;
+  if (s === 'rejected') return `<span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-danger/10 text-danger border border-danger/30">Rejected</span>`;
+  return `<span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-line text-muted">—</span>`;
+}
+
+async function loadAdminKyc() {
+  try {
+    const filter = ($('kyc-filter') && $('kyc-filter').value) || '';
+    const url = filter ? `/api/admin/kyc?status=${encodeURIComponent(filter)}` : '/api/admin/kyc';
+    const data = await API.req(url);
+    $('kyc-stat-pending').textContent = data.counts.pending || 0;
+    $('kyc-stat-approved').textContent = data.counts.approved || 0;
+    $('kyc-stat-rejected').textContent = data.counts.rejected || 0;
+    $('kyc-stat-notsub').textContent = data.counts.not_submitted || 0;
+
+    const badge = $('kyc-pending-badge');
+    if (data.counts.pending > 0) {
+      badge.classList.remove('hidden');
+      badge.textContent = data.counts.pending;
+    } else {
+      badge.classList.add('hidden');
+    }
+
+    const tbody = $('tbody-kyc');
+    tbody.innerHTML = '';
+    if (!data.kyc.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-10 text-sm">No KYC submissions${filter ? ` (${filter})` : ''}</td></tr>`;
+      return;
+    }
+    data.kyc.forEach(k => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-line hover:bg-bg/40';
+      tr.innerHTML = `
+        <td class="px-5 py-3 text-muted text-xs">${k.kyc_submitted_at ? fmtDate(k.kyc_submitted_at) : '—'}</td>
+        <td class="px-5 py-3"><div>${escapeHtml(k.name)}</div><div class="text-[11px] text-muted">${escapeHtml(k.email)}</div></td>
+        <td class="px-5 py-3 font-mono text-xs">${escapeHtml(k.mobile_number || '—')}</td>
+        <td class="px-5 py-3">${kycStatusBadge(k.kyc_status)}</td>
+        <td class="px-5 py-3 pr-5 text-right">
+          <button data-id="${k.id}" class="btn-kyc-view text-xs px-2.5 py-1.5 bg-accent2/10 text-accent2 border border-accent2/30 rounded hover:bg-accent2/20 transition">View</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.btn-kyc-view').forEach(b => {
+      b.addEventListener('click', () => openKycReview(b.dataset.id));
+    });
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+let currentKycUserId = null;
+async function openKycReview(id) {
+  try {
+    const d = await API.req('/api/admin/kyc/' + id);
+    currentKycUserId = id;
+    $('kyc-admin-status').innerHTML = kycStatusBadge(d.user.kyc_status);
+    $('kyc-admin-name').textContent = d.user.name || '—';
+    $('kyc-admin-email').textContent = d.user.email || '—';
+    $('kyc-admin-mobile').textContent = d.user.mobile_number || '—';
+    $('kyc-admin-submitted').textContent = d.user.kyc_submitted_at ? fmtDate(d.user.kyc_submitted_at) : '—';
+    $('kyc-admin-aadhar').src = d.aadhar || '';
+    $('kyc-admin-pan').src = d.pan || '';
+    $('kyc-admin-selfie').src = d.selfie || '';
+    $('form-kyc-action').reset();
+    const isPending = d.user.kyc_status === 'pending';
+    $('btn-kyc-admin-approve').disabled = !isPending;
+    $('btn-kyc-admin-reject').disabled = !isPending;
+    $('btn-kyc-admin-approve').className = isPending
+      ? 'flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm'
+      : 'flex-1 bg-line text-muted font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed';
+    $('btn-kyc-admin-reject').className = isPending
+      ? 'flex-1 bg-danger hover:bg-danger/90 text-white font-semibold py-2.5 rounded-lg text-sm'
+      : 'flex-1 bg-line text-muted font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed';
+    $('modal-kyc-admin').classList.remove('hidden');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+document.addEventListener('click', async (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'btn-kyc-admin-cancel') $('modal-kyc-admin').classList.add('hidden');
+  if (e.target.id === 'btn-kyc-admin-approve') {
+    if (!currentKycUserId) return;
+    try {
+      await API.req(`/api/admin/kyc/${currentKycUserId}/approve`, { method: 'POST' });
+      $('modal-kyc-admin').classList.add('hidden');
+      toast('KYC approved', 'success');
+      loadAdminKyc();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (e.target.id === 'btn-kyc-admin-reject') {
+    if (!currentKycUserId) return;
+    const reason = $('form-kyc-action').querySelector('input[name="reason"]').value || undefined;
+    try {
+      await API.req(`/api/admin/kyc/${currentKycUserId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      $('modal-kyc-admin').classList.add('hidden');
+      toast('KYC rejected', 'success');
+      loadAdminKyc();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (e.target.id === 'btn-refresh-kyc') loadAdminKyc();
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'kyc-filter') loadAdminKyc();
 });
 
 // ---------- Util ----------

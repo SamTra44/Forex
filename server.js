@@ -11,10 +11,23 @@ const jwt = require('jsonwebtoken');
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod-' + crypto.randomBytes(8).toString('hex');
-const REFERRAL_BONUS = 20;
-const PROFIT_DAY_PCT = 0.01;       // 1% daily profit cap
-const LOSS_DAY_PCT = -0.005;       // 0.5% loss day (rare)
-const HARD_CAP_MULTIPLIER = 1.4;   // brief excursion up to 1.4x target before strong mean reversion
+
+// Bot
+const PROFIT_DAY_PCT = 0.007;       // 0.7% of capital per day
+const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user
+
+// Referral program
+const MIN_QUALIFYING_DEPOSIT = 300;        // first deposit must be ≥ $300 to fire bonuses
+const REFERRER_COMMISSION_PCT = 0.05;      // referrer earns 5% of referee's qualifying deposit
+const SIGNUP_BONUS_PCT = 0.05;             // referee gets 5% signup bonus
+const REFERRAL_ACHIEVEMENT_BONUS = 10;     // bonus when 3 quality referrals are reached
+const REFERRAL_ACHIEVEMENT_COUNT = 3;
+const REFERRAL_ACHIEVEMENT_WINDOW_DAYS = 60;
+const REFERRAL_WALLET_MIN_PAYOUT = 45;     // min ref-balance to move-to-trading or withdraw
+
+// KYC
+const KYC_MAX_IMAGE_BYTES = 800 * 1024;    // ~800 KB per image (data URL)
+
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data.db');
 const DB_DIR = path.dirname(DB_PATH);
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(DB_DIR, 'backups');
@@ -76,10 +89,23 @@ db.exec(`
     day_start_balance REAL NOT NULL DEFAULT 0,
     daily_pnl REAL NOT NULL DEFAULT 0,
     daily_pnl_date TEXT,
+    daily_trade_count INTEGER NOT NULL DEFAULT 0,
     wallet_address TEXT,
     deposit_address TEXT,
     usdt_balance REAL NOT NULL DEFAULT 0,
     usdt_address TEXT UNIQUE,
+    referral_balance REAL NOT NULL DEFAULT 0,
+    total_deposits REAL NOT NULL DEFAULT 0,
+    qualifying_deposit_at TEXT,
+    achievement_paid INTEGER NOT NULL DEFAULT 0,
+    mobile_number TEXT,
+    kyc_status TEXT NOT NULL DEFAULT 'not_submitted',
+    kyc_aadhar_data TEXT,
+    kyc_pan_data TEXT,
+    kyc_selfie_data TEXT,
+    kyc_submitted_at TEXT,
+    kyc_reviewed_at TEXT,
+    kyc_reject_reason TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS transactions (
@@ -104,6 +130,19 @@ try { db.exec('ALTER TABLE users ADD COLUMN wallet_address TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN deposit_address TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN usdt_balance REAL NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN usdt_address TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN referral_balance REAL NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN total_deposits REAL NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN qualifying_deposit_at TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN achievement_paid INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN mobile_number TEXT'); } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN kyc_status TEXT NOT NULL DEFAULT 'not_submitted'"); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_aadhar_data TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_pan_data TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_selfie_data TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_submitted_at TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_reviewed_at TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN kyc_reject_reason TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN daily_trade_count INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { db.exec("ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'"); } catch {}
 try { db.exec('ALTER TABLE transactions ADD COLUMN processed_at TEXT'); } catch {}
 try { db.exec('ALTER TABLE transactions ADD COLUMN txid TEXT'); } catch {}
@@ -183,7 +222,7 @@ if (!adminRow) {
 // ---------- App setup ----------
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- Helpers ----------
@@ -217,15 +256,21 @@ function publicUser(u) {
     id: u.id,
     email: u.email,
     name: u.name,
+    mobile_number: u.mobile_number || null,
     balance: Number(u.balance),
     usdt_balance: Number(u.usdt_balance || 0),
     usdt_address: u.usdt_address || null,
+    referral_balance: Number(u.referral_balance || 0),
+    total_deposits: Number(u.total_deposits || 0),
     referral_code: u.referral_code,
     referred_by: u.referred_by,
     is_admin: !!u.is_admin,
     bot_active: !!u.bot_active,
-    wallet_address: u.wallet_address || null,
-    deposit_address: u.deposit_address || null,
+    kyc_status: u.kyc_status || 'not_submitted',
+    kyc_submitted_at: u.kyc_submitted_at || null,
+    kyc_reviewed_at: u.kyc_reviewed_at || null,
+    kyc_reject_reason: u.kyc_reject_reason || null,
+    achievement_paid: !!u.achievement_paid,
     created_at: u.created_at,
   };
 }
@@ -271,14 +316,8 @@ app.post('/api/auth/signup', (req, res) => {
 
   const newId = result.lastInsertRowid;
 
-  // Credit referral bonus
-  if (referrer) {
-    db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(REFERRAL_BONUS, referrer.id);
-    db.prepare(`
-      INSERT INTO transactions (user_id, type, amount, note)
-      VALUES (?, 'referral_bonus', ?, ?)
-    `).run(referrer.id, REFERRAL_BONUS, `Referral signup: ${normEmail}`);
-  }
+  // No instant referral bonus on signup — bonuses fire when referee makes
+  // their first qualifying deposit (≥ MIN_QUALIFYING_DEPOSIT). See applyReferralBonuses().
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(newId);
   const token = signToken(user);
@@ -316,6 +355,245 @@ app.get('/api/me/transactions', authRequired, (req, res) => {
     ORDER BY id DESC LIMIT 200
   `).all(req.user.id);
   res.json({ transactions: rows });
+});
+
+// ---------- Profile ----------
+app.post('/api/me/profile', authRequired, (req, res) => {
+  const mobile = String(req.body?.mobile_number || '').trim();
+  // Loose validation: 6-20 digits with optional +/spaces — strict format varies by country.
+  const cleaned = mobile.replace(/[\s\-()]/g, '');
+  if (!/^\+?\d{6,20}$/.test(cleaned)) {
+    return res.status(400).json({ error: 'invalid mobile number' });
+  }
+  db.prepare('UPDATE users SET mobile_number = ? WHERE id = ?').run(cleaned, req.user.id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  res.json({ user: publicUser(user) });
+});
+
+// ---------- KYC ----------
+function validKycImage(s) {
+  if (typeof s !== 'string') return false;
+  if (!s.startsWith('data:image/')) return false;
+  if (s.length > KYC_MAX_IMAGE_BYTES) return false;
+  return true;
+}
+
+app.post('/api/me/kyc', authRequired, (req, res) => {
+  const { aadhar, pan, selfie, mobile_number } = req.body || {};
+  if (!validKycImage(aadhar)) return res.status(400).json({ error: 'invalid Aadhar image (PNG/JPG, ≤ 600 KB)' });
+  if (!validKycImage(pan)) return res.status(400).json({ error: 'invalid PAN image (PNG/JPG, ≤ 600 KB)' });
+  if (!validKycImage(selfie)) return res.status(400).json({ error: 'invalid selfie image (PNG/JPG, ≤ 600 KB)' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  if (user.kyc_status === 'pending') return res.status(400).json({ error: 'KYC already submitted — awaiting review' });
+  if (user.kyc_status === 'approved') return res.status(400).json({ error: 'KYC already approved' });
+
+  const mobile = String(mobile_number || user.mobile_number || '').trim().replace(/[\s\-()]/g, '');
+  if (!/^\+?\d{6,20}$/.test(mobile)) {
+    return res.status(400).json({ error: 'mobile number required for KYC' });
+  }
+
+  db.prepare(`
+    UPDATE users SET
+      mobile_number = ?,
+      kyc_aadhar_data = ?, kyc_pan_data = ?, kyc_selfie_data = ?,
+      kyc_status = 'pending',
+      kyc_submitted_at = datetime('now'),
+      kyc_reviewed_at = NULL,
+      kyc_reject_reason = NULL
+    WHERE id = ?
+  `).run(mobile, aadhar, pan, selfie, req.user.id);
+
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  res.json({ user: publicUser(updated) });
+});
+
+app.get('/api/me/kyc', authRequired, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  res.json({
+    status: user.kyc_status,
+    mobile_number: user.mobile_number || null,
+    submitted_at: user.kyc_submitted_at,
+    reviewed_at: user.kyc_reviewed_at,
+    reject_reason: user.kyc_reject_reason,
+  });
+});
+
+// ---------- Referral wallet ----------
+function ensureKycApproved(user) {
+  return user.kyc_status === 'approved';
+}
+
+// Move referral wallet → trading USD balance (no KYC needed, internal restructure).
+app.post('/api/me/ref/move-to-trading', authRequired, (req, res) => {
+  const amount = Number(req.body?.amount);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  if (Number(user.referral_balance) < REFERRAL_WALLET_MIN_PAYOUT) {
+    return res.status(400).json({ error: `minimum $${REFERRAL_WALLET_MIN_PAYOUT} required in referral wallet` });
+  }
+  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(user.referral_balance) + 1e-9) {
+    return res.status(400).json({ error: 'invalid amount' });
+  }
+  const amt = +Number(amount).toFixed(2);
+  withTransaction(() => {
+    db.prepare('UPDATE users SET referral_balance = referral_balance - ?, balance = balance + ? WHERE id = ?').run(amt, amt, user.id);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, note)
+      VALUES (?, 'ref_to_trading', ?, ?)
+    `).run(user.id, amt, `Moved $${amt.toFixed(2)} from referral wallet to trading`);
+  });
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  res.json({ user: publicUser(updated) });
+});
+
+// Withdraw from referral wallet → on-platform USDT wallet (KYC required).
+app.post('/api/me/ref/withdraw', authRequired, (req, res) => {
+  const amount = Number(req.body?.amount);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  if (!ensureKycApproved(user)) {
+    return res.status(403).json({ error: 'complete KYC verification before withdrawing' });
+  }
+  if (Number(user.referral_balance) < REFERRAL_WALLET_MIN_PAYOUT) {
+    return res.status(400).json({ error: `minimum $${REFERRAL_WALLET_MIN_PAYOUT} required in referral wallet` });
+  }
+  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(user.referral_balance) + 1e-9) {
+    return res.status(400).json({ error: 'invalid amount' });
+  }
+  ensureUsdtAddress(user.id);
+  const usd = +Number(amount).toFixed(2);
+  const price = usdtPriceCache.price;
+  const usdt = +(usd / price).toFixed(6);
+  withTransaction(() => {
+    db.prepare('UPDATE users SET referral_balance = referral_balance - ?, usdt_balance = usdt_balance + ? WHERE id = ?').run(usd, usdt, user.id);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, usdt_amount, note)
+      VALUES (?, 'ref_withdraw', ?, ?, ?)
+    `).run(user.id, -usd, usdt, `Withdrew $${usd.toFixed(2)} ref → ${usdt.toFixed(6)} USDT @ $${price.toFixed(4)}`);
+  });
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  res.json({ user: publicUser(updated), usd_withdrawn: usd, usdt_received: usdt });
+});
+
+// ---------- Referral bonus engine (called on first qualifying deposit) ----------
+function applyReferralBonuses(userId, depositAmount) {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!user) return null;
+  if (user.qualifying_deposit_at) return null; // already qualified once
+  if (depositAmount < MIN_QUALIFYING_DEPOSIT) return null;
+
+  const events = [];
+
+  // Mark this deposit as the qualifying one
+  db.prepare("UPDATE users SET qualifying_deposit_at = datetime('now') WHERE id = ?").run(userId);
+
+  // Joining bonus to the new user (5% of qualifying deposit) → their referral wallet
+  const joinBonus = +(depositAmount * SIGNUP_BONUS_PCT).toFixed(2);
+  if (joinBonus > 0) {
+    db.prepare('UPDATE users SET referral_balance = referral_balance + ? WHERE id = ?').run(joinBonus, userId);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, note)
+      VALUES (?, 'ref_signup_bonus', ?, ?)
+    `).run(userId, joinBonus, `Signup bonus 5% of $${depositAmount.toFixed(2)} qualifying deposit`);
+    events.push({ to: userId, kind: 'signup_bonus', amount: joinBonus });
+  }
+
+  // Commission to referrer (5% of qualifying deposit) → their referral wallet
+  if (user.referred_by) {
+    const commission = +(depositAmount * REFERRER_COMMISSION_PCT).toFixed(2);
+    if (commission > 0) {
+      db.prepare('UPDATE users SET referral_balance = referral_balance + ? WHERE id = ?').run(commission, user.referred_by);
+      db.prepare(`
+        INSERT INTO transactions (user_id, type, amount, note, counterparty_id)
+        VALUES (?, 'ref_commission', ?, ?, ?)
+      `).run(user.referred_by, commission, `5% commission from ${user.email} ($${depositAmount.toFixed(2)})`, userId);
+      events.push({ to: user.referred_by, kind: 'commission', amount: commission });
+    }
+
+    // Achievement: 3 quality referrals (those who hit qualifying deposit)
+    // within REFERRAL_ACHIEVEMENT_WINDOW_DAYS of the referrer's signup.
+    const referrer = db.prepare('SELECT * FROM users WHERE id = ?').get(user.referred_by);
+    if (referrer && !referrer.achievement_paid) {
+      const cutoff = `datetime('${referrer.created_at}', '+${REFERRAL_ACHIEVEMENT_WINDOW_DAYS} days')`;
+      const qualifiedRefs = db.prepare(`
+        SELECT COUNT(*) AS c FROM users
+        WHERE referred_by = ? AND qualifying_deposit_at IS NOT NULL
+          AND datetime(qualifying_deposit_at) <= ${cutoff}
+      `).get(referrer.id).c;
+      if (qualifiedRefs >= REFERRAL_ACHIEVEMENT_COUNT) {
+        db.prepare('UPDATE users SET referral_balance = referral_balance + ?, achievement_paid = 1 WHERE id = ?')
+          .run(REFERRAL_ACHIEVEMENT_BONUS, referrer.id);
+        db.prepare(`
+          INSERT INTO transactions (user_id, type, amount, note)
+          VALUES (?, 'ref_achievement', ?, ?)
+        `).run(referrer.id, REFERRAL_ACHIEVEMENT_BONUS, `Achievement: 3 referrals within ${REFERRAL_ACHIEVEMENT_WINDOW_DAYS} days`);
+        events.push({ to: referrer.id, kind: 'achievement', amount: REFERRAL_ACHIEVEMENT_BONUS });
+      }
+    }
+  }
+
+  return events;
+}
+
+// ---------- Admin · KYC ----------
+app.get('/api/admin/kyc', authRequired, adminRequired, (req, res) => {
+  const filter = req.query.status || null;
+  let rows;
+  if (filter) {
+    rows = db.prepare(`
+      SELECT id, name, email, mobile_number, kyc_status, kyc_submitted_at, kyc_reviewed_at, kyc_reject_reason
+      FROM users WHERE is_admin = 0 AND kyc_status = ?
+      ORDER BY kyc_submitted_at DESC LIMIT 200
+    `).all(filter);
+  } else {
+    rows = db.prepare(`
+      SELECT id, name, email, mobile_number, kyc_status, kyc_submitted_at, kyc_reviewed_at, kyc_reject_reason
+      FROM users WHERE is_admin = 0 AND kyc_status != 'not_submitted'
+      ORDER BY
+        CASE kyc_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,
+        kyc_submitted_at DESC LIMIT 200
+    `).all();
+  }
+  const counts = db.prepare(`
+    SELECT
+      SUM(CASE WHEN kyc_status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN kyc_status = 'approved' THEN 1 ELSE 0 END) AS approved,
+      SUM(CASE WHEN kyc_status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+      SUM(CASE WHEN kyc_status = 'not_submitted' THEN 1 ELSE 0 END) AS not_submitted
+    FROM users WHERE is_admin = 0
+  `).get();
+  res.json({ kyc: rows, counts });
+});
+
+app.get('/api/admin/kyc/:userId', authRequired, adminRequired, (req, res) => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  res.json({
+    user: publicUser(u),
+    aadhar: u.kyc_aadhar_data || null,
+    pan: u.kyc_pan_data || null,
+    selfie: u.kyc_selfie_data || null,
+  });
+});
+
+app.post('/api/admin/kyc/:userId/approve', authRequired, adminRequired, (req, res) => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  if (u.kyc_status !== 'pending') return res.status(400).json({ error: `cannot approve from ${u.kyc_status}` });
+  db.prepare(`UPDATE users SET kyc_status='approved', kyc_reviewed_at=datetime('now'), kyc_reject_reason=NULL WHERE id=?`).run(u.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/kyc/:userId/reject', authRequired, adminRequired, (req, res) => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.userId);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  if (u.kyc_status !== 'pending') return res.status(400).json({ error: `cannot reject from ${u.kyc_status}` });
+  const reason = req.body?.reason ? String(req.body.reason).trim().slice(0, 200) : 'Documents could not be verified';
+  db.prepare(`UPDATE users SET kyc_status='rejected', kyc_reviewed_at=datetime('now'), kyc_reject_reason=? WHERE id=?`).run(reason, u.id);
+  res.json({ ok: true });
 });
 
 app.get('/api/me/referrals', authRequired, (req, res) => {
@@ -443,17 +721,28 @@ app.post('/api/admin/users/:id/credit', authRequired, adminRequired, (req, res) 
     const txid = req.body?.txid ? String(req.body.txid).trim() : null;
     note = note || (txid
       ? `On-chain deposit · TXID ${txid.slice(0, 12)}...${txid.slice(-6)}`
-      : `Deposit confirmed to ${target.deposit_address || 'wallet'}`);
+      : `Deposit confirmed`);
   } else {
     note = note || `Admin credit by ${req.user.email}`;
   }
 
-  db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, userId);
-  db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, ?, ?, ?)`)
-    .run(userId, txType, amount, note);
+  let bonusEvents = null;
+  withTransaction(() => {
+    db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, userId);
+    if (asDeposit && amount > 0) {
+      db.prepare('UPDATE users SET total_deposits = total_deposits + ? WHERE id = ?').run(amount, userId);
+    }
+    db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, ?, ?, ?)`)
+      .run(userId, txType, amount, note);
+
+    // Fire referral bonuses if this is the user's first qualifying deposit
+    if (asDeposit && amount >= MIN_QUALIFYING_DEPOSIT) {
+      bonusEvents = applyReferralBonuses(userId, amount);
+    }
+  });
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-  res.json({ user: publicUser(updated) });
+  res.json({ user: publicUser(updated), referral_bonuses: bonusEvents });
 });
 
 // ---------- Admin · Withdrawals ----------
@@ -594,16 +883,19 @@ function withTransaction(fn) {
   }
 }
 
-// Buy USDT with USD balance
+// Withdraw to USDT Wallet (Trading USD → Platform USDT). Requires KYC approved.
 app.post('/api/usdt/buy', authRequired, (req, res) => {
   const usd = Number(req.body?.usd_amount);
   if (!Number.isFinite(usd) || usd < USDT_MIN_TRADE) {
-    return res.status(400).json({ error: `minimum buy is $${USDT_MIN_TRADE}` });
+    return res.status(400).json({ error: `minimum amount is $${USDT_MIN_TRADE}` });
   }
   if (usd > 1_000_000) return res.status(400).json({ error: 'amount too large' });
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'not found' });
+  if (user.kyc_status !== 'approved') {
+    return res.status(403).json({ error: 'complete KYC verification before withdrawing to wallet' });
+  }
   if (Number(user.balance) < usd) return res.status(400).json({ error: 'insufficient USD balance' });
 
   ensureUsdtAddress(user.id);
@@ -656,66 +948,8 @@ app.post('/api/usdt/sell', authRequired, (req, res) => {
   res.json({ user: publicUser(updated), price, usd_received: usd });
 });
 
-// Send USDT to another user (internal — instant)
-app.post('/api/usdt/send', authRequired, (req, res) => {
-  const usdt = Number(req.body?.usdt_amount);
-  const toAddr = String(req.body?.to_address || '').trim();
-  if (!toAddr || toAddr.length < 10) return res.status(400).json({ error: 'invalid recipient address' });
-  if (!Number.isFinite(usdt) || usdt < USDT_MIN_TRANSFER) {
-    return res.status(400).json({ error: `minimum transfer is ${USDT_MIN_TRANSFER} USDT` });
-  }
-
-  const sender = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!sender) return res.status(404).json({ error: 'not found' });
-  ensureUsdtAddress(sender.id);
-
-  const recipient = db.prepare('SELECT * FROM users WHERE usdt_address = ?').get(toAddr);
-  if (!recipient) return res.status(404).json({ error: 'recipient not found in this system' });
-  if (recipient.id === sender.id) return res.status(400).json({ error: 'cannot send to your own address' });
-
-  if (Number(sender.usdt_balance) < usdt - 1e-9) {
-    return res.status(400).json({ error: 'insufficient USDT balance' });
-  }
-
-  const amt = round6(usdt);
-  const senderNote = `Sent ${amt.toFixed(6)} USDT to ${recipient.email}`;
-  const recvNote = `Received ${amt.toFixed(6)} USDT from ${sender.email}`;
-
-  withTransaction(() => {
-    db.prepare('UPDATE users SET usdt_balance = usdt_balance - ? WHERE id = ?').run(amt, sender.id);
-    db.prepare('UPDATE users SET usdt_balance = usdt_balance + ? WHERE id = ?').run(amt, recipient.id);
-    db.prepare(`
-      INSERT INTO transactions (user_id, type, amount, usdt_amount, note, counterparty_id)
-      VALUES (?, 'usdt_send', 0, ?, ?, ?)
-    `).run(sender.id, -amt, senderNote, recipient.id);
-    db.prepare(`
-      INSERT INTO transactions (user_id, type, amount, usdt_amount, note, counterparty_id)
-      VALUES (?, 'usdt_receive', 0, ?, ?, ?)
-    `).run(recipient.id, amt, recvNote, sender.id);
-  });
-
-  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(sender.id);
-  res.json({
-    user: publicUser(updated),
-    sent_to: { name: recipient.name, email: recipient.email, address: recipient.usdt_address },
-    amount: amt,
-  });
-});
-
-// Lookup recipient by USDT internal address (so UI can preview before sending)
-app.get('/api/usdt/lookup', authRequired, (req, res) => {
-  const addr = String(req.query.address || '').trim();
-  if (!addr) return res.status(400).json({ error: 'address required' });
-  const u = db.prepare('SELECT id, name, email, usdt_address FROM users WHERE usdt_address = ?').get(addr);
-  if (!u) return res.status(404).json({ error: 'not found' });
-  res.json({
-    found: true,
-    name: u.name,
-    email: u.email,
-    address: u.usdt_address,
-    is_self: u.id === req.user.id,
-  });
-});
+// User-to-user transfers are disabled by design. Internal USDT stays in
+// each user's wallet — no on-platform transfer between users.
 
 // ---------- Admin · Backup & Migration ----------
 // Hot, consistent SQLite snapshot. VACUUM INTO produces a checkpointed copy
@@ -852,9 +1086,8 @@ app.delete('/api/admin/backup/:name', authRequired, adminRequired, (req, res) =>
 
 // ---------- Bot (algo trading simulator) ----------
 const SYMBOLS = ['EUR/USD', 'BTC/USD', 'GOLD', 'ETH/USD', 'GBP/USD', 'NAS100', 'XAU/USD', 'AAPL'];
-const BOT_TICK_MS = 2500;
-const BOT_MIN_PNL = 0.5;
-const BOT_MAX_PNL = 50;
+const BOT_TICK_MS = 60_000;          // poll every minute
+const BOT_MIN_PNL = 0.05;
 
 app.get('/api/me/bot/trades', authRequired, (req, res) => {
   const rows = db.prepare(`
@@ -865,45 +1098,11 @@ app.get('/api/me/bot/trades', authRequired, (req, res) => {
   res.json({ trades: rows });
 });
 
-// Deterministic-by-day pseudo-random: same day → same outcome across the platform.
-function dayHash(day, salt) {
-  let h = ((day | 0) * 2654435761 ^ (salt * 1664525)) >>> 0;
-  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b) >>> 0;
-  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35) >>> 0;
-  h ^= h >>> 16;
-  return h / 4294967296;
-}
-
-const BOOM_PROBABILITY = 0.12;        // ~12% of days are boom days (~1 in 8)
-const BOOM_MIN_PCT = 0.10;            // boom day target: 10–20%
-const BOOM_MAX_PCT = 0.20;
-const RECOVERY_MIN_USD = 10;          // recovery loss: $10–$20 (capped at 5% of balance)
-const RECOVERY_MAX_USD = 20;
-const RECOVERY_BAL_CAP_PCT = 0.05;
-const NORMAL_LOSS_PROBABILITY = 0.18; // ~18% of normal days are loss days
-
-function computeDayTarget(effectiveStart) {
-  const dayNum = Math.floor(Date.now() / 86400000);
-
-  const isBoomToday = dayHash(dayNum, 1) < BOOM_PROBABILITY;
-  const wasBoomYesterday = !isBoomToday && dayHash(dayNum - 1, 1) < BOOM_PROBABILITY;
-
-  if (isBoomToday) {
-    const pct = BOOM_MIN_PCT + dayHash(dayNum, 2) * (BOOM_MAX_PCT - BOOM_MIN_PCT);
-    const targetPnl = +(effectiveStart * pct).toFixed(2);
-    return { mode: 'boom', isProfitDay: true, target_pct: pct, targetPnl };
-  }
-  if (wasBoomYesterday) {
-    const baseUsd = RECOVERY_MIN_USD + dayHash(dayNum, 3) * (RECOVERY_MAX_USD - RECOVERY_MIN_USD);
-    const cappedUsd = Math.max(0.5, Math.min(baseUsd, effectiveStart * RECOVERY_BAL_CAP_PCT));
-    const targetPnl = -+cappedUsd.toFixed(2);
-    const pct = effectiveStart > 0 ? targetPnl / effectiveStart : 0;
-    return { mode: 'recovery', isProfitDay: false, target_pct: pct, targetPnl };
-  }
-  const isProfitDay = dayHash(dayNum, 4) >= NORMAL_LOSS_PROBABILITY;
-  const pct = isProfitDay ? PROFIT_DAY_PCT : LOSS_DAY_PCT;
-  const targetPnl = +(effectiveStart * pct).toFixed(2);
-  return { mode: isProfitDay ? 'profit' : 'loss', isProfitDay, target_pct: pct, targetPnl };
+// Deterministic per-user trade slots (each user gets 2 distinct UTC hours per day).
+function userSlotHours(userId) {
+  const slot1 = 8 + (((userId | 0) * 7919) >>> 0) % 6;   // 8..13
+  const slot2 = 14 + (((userId | 0) * 1597) >>> 0) % 6;  // 14..19
+  return [slot1, slot2];
 }
 
 app.get('/api/me/bot/status', authRequired, (req, res) => {
@@ -911,100 +1110,77 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   if (!user) return res.status(404).json({ error: 'not found' });
   const today = new Date().toISOString().slice(0, 10);
   const dailyPnl = (user.daily_pnl_date === today) ? Number(user.daily_pnl) : 0;
+  const tradeCount = (user.daily_pnl_date === today) ? Number(user.daily_trade_count || 0) : 0;
   const effectiveStart = Math.max(1, Number(user.balance) - dailyPnl);
-  const { mode, isProfitDay, target_pct, targetPnl } = computeDayTarget(effectiveStart);
+  const targetPnl = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
+  const [slot1, slot2] = userSlotHours(user.id);
   res.json({
-    mode,
-    is_profit_day: isProfitDay,
-    target_pct,
+    mode: 'profit',
+    is_profit_day: true,
+    target_pct: PROFIT_DAY_PCT,
     target_pnl: targetPnl,
     daily_pnl: dailyPnl,
     day_start_balance: effectiveStart,
+    trades_per_day: TRADES_PER_DAY,
+    daily_trade_count: tradeCount,
+    slot_hours_utc: [slot1, slot2],
     progress_pct: targetPnl !== 0 ? Math.max(0, Math.min(100, (dailyPnl / targetPnl) * 100)) : 0,
   });
 });
 
 function botTick() {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const hour = now.getUTCHours();
 
   const activeUsers = db.prepare(`
-    SELECT id, balance, daily_pnl, daily_pnl_date
+    SELECT id, balance, daily_pnl, daily_pnl_date, daily_trade_count
     FROM users WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
   `).all();
   if (activeUsers.length === 0) return;
 
-  const resetDay = db.prepare(`UPDATE users SET daily_pnl = 0, daily_pnl_date = ? WHERE id = ?`);
-  const updateBalanceAndPnl = db.prepare(`UPDATE users SET balance = balance + ?, daily_pnl = daily_pnl + ? WHERE id = ?`);
+  const resetDay = db.prepare(`UPDATE users SET daily_pnl = 0, daily_trade_count = 0, daily_pnl_date = ? WHERE id = ?`);
+  const updateTrade = db.prepare(`
+    UPDATE users
+    SET balance = balance + ?, daily_pnl = daily_pnl + ?, daily_trade_count = daily_trade_count + 1, daily_pnl_date = ?
+    WHERE id = ?
+  `);
   const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
 
   for (const u of activeUsers) {
     let dailyPnl = Number(u.daily_pnl) || 0;
-
+    let tradeCount = Number(u.daily_trade_count) || 0;
     if (u.daily_pnl_date !== today) {
       dailyPnl = 0;
+      tradeCount = 0;
       resetDay.run(today, u.id);
     }
+    if (tradeCount >= TRADES_PER_DAY) continue;
+
+    const [slot1, slot2] = userSlotHours(u.id);
+    const isFirstSlot  = hour === slot1 && tradeCount === 0;
+    const isSecondSlot = hour === slot2 && tradeCount === 1;
+    if (!isFirstSlot && !isSecondSlot) continue;
 
     const effectiveStart = Math.max(1, Number(u.balance) - dailyPnl);
-    const { isProfitDay, targetPnl } = computeDayTarget(effectiveStart);
+    const targetTotal = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
 
-    // Overshoot ratio: how far daily_pnl has drifted relative to target
-    // 0 = at target, +1 = at 2x target, -1 = at 0 (or opposite of target)
-    const targetAbs = Math.max(0.5, Math.abs(targetPnl));
-    const dist = (dailyPnl - targetPnl) / targetAbs; // negative = below profit target
-
-    // Direction probability with mean reversion
-    let upProbability;
-    if (isProfitDay) {
-      if (dist > 0.4) upProbability = 0.10;       // above target: strong negative
-      else if (dist > 0.1) upProbability = 0.30;
-      else if (dist < -0.6) upProbability = 0.85; // way below: push up
-      else if (dist < -0.2) upProbability = 0.70;
-      else upProbability = 0.55;                   // near target: slight up
+    let pnl;
+    if (tradeCount === 0) {
+      // First trade: 45–55% of total target (slight randomness, always positive)
+      const portion = 0.45 + Math.random() * 0.10;
+      pnl = +(targetTotal * portion).toFixed(2);
     } else {
-      // Loss day: target is negative; invert
-      if (dist < -0.4) upProbability = 0.85;       // below loss target (further loss): push up
-      else if (dist < -0.1) upProbability = 0.65;
-      else if (dist > 0.6) upProbability = 0.20;   // above (less loss): push down
-      else if (dist > 0.2) upProbability = 0.35;
-      else upProbability = 0.45;
+      // Second trade: complete the remaining target so daily total = exactly 0.7%
+      pnl = +(targetTotal - dailyPnl).toFixed(2);
     }
+    if (pnl < BOT_MIN_PNL) pnl = +BOT_MIN_PNL.toFixed(2);
 
-    const direction = Math.random() < upProbability ? 1 : -1;
-
-    // Trade magnitude: scaled to target so ~5-10 trades can swing the daily PnL by full target
-    const baseMag = Math.max(0.5, Math.abs(targetPnl) / 6);
-    let magnitude = baseMag * (0.3 + Math.random() * 1.5);
-    // 8% chance of bigger swing (2-4x base) for excitement
-    if (Math.random() < 0.08) magnitude *= 2 + Math.random() * 2;
-    // Per-trade cap scales with target so boom days (10-20%) actually reach their target
-    const dynamicMax = Math.max(BOT_MAX_PNL, Math.abs(targetPnl) * 0.5);
-    magnitude = Math.max(BOT_MIN_PNL, Math.min(dynamicMax, magnitude));
-    magnitude = +magnitude.toFixed(2);
-
-    let pnl = +(direction * magnitude).toFixed(2);
-
-    // Hard cap: don't allow daily_pnl to exceed 1.4x target in profit direction
-    const projected = dailyPnl + pnl;
-    if (Math.sign(targetPnl) > 0 && projected > targetPnl * HARD_CAP_MULTIPLIER && pnl > 0) {
-      pnl = -Math.abs(pnl);
-    } else if (Math.sign(targetPnl) < 0 && projected < targetPnl * HARD_CAP_MULTIPLIER && pnl < 0) {
-      pnl = Math.abs(pnl);
-    }
-
-    // Don't go below $1 balance
-    if (pnl < 0 && Math.abs(pnl) > Number(u.balance) - 1) {
-      pnl = -(Number(u.balance) - 1);
-      pnl = +pnl.toFixed(2);
-    }
-    if (Math.abs(pnl) < 0.01) continue;
-
-    const win = pnl >= 0;
     const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
     const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
-    const note = `${side} ${symbol} ${win ? 'TP hit' : 'SL hit'}`;
+    const note = `${side} ${symbol} TP hit`;
 
-    updateBalanceAndPnl.run(pnl, pnl, u.id);
+    updateTrade.run(pnl, pnl, today, u.id);
     insertTx.run(u.id, pnl, note);
   }
 }
