@@ -151,135 +151,51 @@ function routeAfterAuth() {
   }
 }
 
-// ---------- Chart (real Binance data) ----------
-const chartState = {
-  chart: null,
-  series: null,
-  symbol: 'btcusdt',
-  interval: '5m',
-  ws: null,
-  tickerTimer: null,
-  reconnectTimer: null,
-  resizeObserver: null,
-};
-
-async function initChart() {
-  const el = $('chart-container');
-  if (!el || chartState.chart) return;
-  if (typeof LightweightCharts === 'undefined') return;
-
-  chartState.chart = LightweightCharts.createChart(el, {
-    layout: { background: { color: '#161e2e' }, textColor: '#9ca3af', fontSize: 11 },
-    grid: { vertLines: { color: '#1f2937' }, horzLines: { color: '#1f2937' } },
-    timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false },
-    rightPriceScale: { borderColor: '#1f2937' },
-    crosshair: { mode: 1 },
-    width: el.clientWidth,
-    height: 360,
-  });
-  chartState.series = chartState.chart.addCandlestickSeries({
-    upColor: '#22d3a7', downColor: '#ef4444',
-    borderUpColor: '#22d3a7', borderDownColor: '#ef4444',
-    wickUpColor: '#22d3a7', wickDownColor: '#ef4444',
-  });
-
-  await loadChartHistory();
-  connectChartStream();
-  refreshTicker();
-  if (chartState.tickerTimer) clearInterval(chartState.tickerTimer);
-  chartState.tickerTimer = setInterval(refreshTicker, 15000);
-
-  window.addEventListener('resize', () => {
-    if (chartState.chart) chartState.chart.applyOptions({ width: el.clientWidth });
-  });
-
-  // Symbol switcher
-  const sel = $('chart-symbol-select');
-  if (sel) sel.addEventListener('change', () => switchSymbol(sel.value));
-  const ivSel = $('chart-interval-select');
-  if (ivSel) ivSel.addEventListener('change', () => switchInterval(ivSel.value));
-}
-
-async function switchSymbol(sym) {
-  chartState.symbol = sym;
-  await loadChartHistory();
-  connectChartStream();
-  refreshTicker();
-}
-
-async function switchInterval(iv) {
-  chartState.interval = iv;
-  await loadChartHistory();
-  connectChartStream();
-}
-
-async function loadChartHistory() {
-  if (!chartState.series) return;
+// ---------- Chart (TradingView widget) ----------
+// One-time init — TradingView handles symbol switching, intervals, indicators, and live price.
+let tvWidgetInitialised = false;
+function initChart() {
+  if (tvWidgetInitialised) return;
+  if (typeof TradingView === 'undefined') return;
+  const el = document.getElementById('tradingview_chart');
+  if (!el) return;
   try {
-    const sym = chartState.symbol.toUpperCase();
-    const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${chartState.interval}&limit=200`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('binance klines ' + res.status);
-    const data = await res.json();
-    const bars = data.map(k => ({
-      time: Math.floor(k[0] / 1000),
-      open: +k[1], high: +k[2], low: +k[3], close: +k[4],
-    }));
-    chartState.series.setData(bars);
-    if (bars.length) {
-      const last = bars[bars.length - 1];
-      $('chart-price').textContent = last.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
+    new TradingView.widget({
+      container_id: 'tradingview_chart',
+      autosize: true,
+      symbol: 'BINANCE:BTCUSDT',
+      interval: '15',
+      timezone: 'Etc/UTC',
+      theme: 'dark',
+      style: '1',
+      locale: 'en',
+      toolbar_bg: '#0a0e17',
+      enable_publishing: false,
+      hide_side_toolbar: false,
+      allow_symbol_change: true,
+      withdateranges: true,
+      details: false,
+      hotlist: false,
+      calendar: false,
+      save_image: false,
+      studies: ['Volume@tv-basicstudies'],
+      overrides: {
+        'paneProperties.background': '#0a0e17',
+        'paneProperties.backgroundType': 'solid',
+        'paneProperties.vertGridProperties.color': '#1f2937',
+        'paneProperties.horzGridProperties.color': '#1f2937',
+        'scalesProperties.textColor': '#9ca3af',
+      },
+    });
+    tvWidgetInitialised = true;
   } catch (err) {
-    console.warn('chart history failed:', err.message);
+    console.warn('TradingView widget failed to load:', err.message);
   }
 }
 
-function connectChartStream() {
-  if (chartState.ws) {
-    try { chartState.ws.onclose = null; chartState.ws.close(); } catch {}
-    chartState.ws = null;
-  }
-  if (chartState.reconnectTimer) { clearTimeout(chartState.reconnectTimer); chartState.reconnectTimer = null; }
-
-  const url = `wss://stream.binance.com:9443/ws/${chartState.symbol}@kline_${chartState.interval}`;
-  let ws;
-  try { ws = new WebSocket(url); } catch { return; }
-  chartState.ws = ws;
-
-  ws.onmessage = (ev) => {
-    try {
-      const msg = JSON.parse(ev.data);
-      const k = msg.k;
-      if (!k) return;
-      const bar = {
-        time: Math.floor(k.t / 1000),
-        open: +k.o, high: +k.h, low: +k.l, close: +k.c,
-      };
-      chartState.series.update(bar);
-      $('chart-price').textContent = bar.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    } catch {}
-  };
-  ws.onerror = () => {};
-  ws.onclose = () => {
-    if (chartState.ws !== ws) return; // newer connection took over
-    chartState.reconnectTimer = setTimeout(connectChartStream, 2500);
-  };
-}
-
-async function refreshTicker() {
-  try {
-    const sym = chartState.symbol.toUpperCase();
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`);
-    if (!res.ok) return;
-    const d = await res.json();
-    const change = +d.priceChange;
-    const pct = +d.priceChangePercent;
-    const el = $('chart-change');
-    const sign = change >= 0 ? '+' : '';
-    el.textContent = `${sign}${change.toFixed(2)} (${sign}${pct.toFixed(2)}%) 24h`;
-    el.className = `text-xs px-2 py-0.5 rounded ${change >= 0 ? 'bg-accent/10 text-accent' : 'bg-danger/10 text-danger'}`;
-  } catch {}
+function teardownChart() {
+  // TradingView widget cleans itself up on iframe unload; nothing for us to do.
+  tvWidgetInitialised = false;
 }
 
 // ---------- Animated number ----------
@@ -322,11 +238,12 @@ async function loadDashboard() {
     renderUsdt(u, me.usdt_price);
     renderProfile(u);
     renderRefWallet(u);
-    $('stat-commission').textContent = fmt(Number(u.referral_balance || 0));
-    $('stat-bonus').textContent = fmt(Number(u.bonus_balance || 0));
-    $('stat-ref-count').textContent = refs.referrals.length;
-    $('referral-count-badge').textContent = refs.referrals.length;
-    $('referral-code').textContent = u.referral_code;
+    const setText = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+    setText('stat-commission', fmt(Number(u.referral_balance || 0)));
+    setText('stat-bonus', fmt(Number(u.bonus_balance || 0)));
+    setText('stat-ref-count', refs.referrals.length);
+    setText('referral-count-badge', refs.referrals.length);
+    setText('referral-code', u.referral_code);
 
     // Today's P&L = realized daily P&L from server
     const pnl = Number(botStatus.daily_pnl) || 0;
@@ -340,54 +257,40 @@ async function loadDashboard() {
     $('bot-wins').textContent = wins;
     $('bot-losses').textContent = losses;
 
-    // Bot mode + target
-    const isProfit = botStatus.is_profit_day;
-    const targetPnl = Number(botStatus.target_pnl);
+    // Bot mode + target — bot is fixed at 2 trades/day, 0.7% of capital
+    const targetPnl = Number(botStatus.target_pnl) || 0;
     const targetPctNum = Number(botStatus.target_pct || 0);
-    const targetPctStr = (targetPctNum * 100).toFixed(targetPctNum >= 0.10 ? 0 : 1);
-    const mode = botStatus.mode || (isProfit ? 'profit' : 'loss');
+    const targetPctStr = (targetPctNum * 100).toFixed(2);
+    const tradesDone = Number(botStatus.daily_trade_count || 0);
+    const tradesPerDay = Number(botStatus.trades_per_day || 2);
     const modeBadge = $('bot-mode-badge');
-    let topLabel = 'Profit Day';
-    let topSub = 'Targeting +1%';
-    if (mode === 'boom') {
-      modeBadge.textContent = `🚀 BOOM +${targetPctStr}%`;
-      modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-yellow-400/15 text-yellow-400 font-bold';
-      topLabel = 'Boom Day 🚀';
-      topSub = `Targeting +${targetPctStr}%`;
-    } else if (mode === 'recovery') {
-      modeBadge.textContent = `RECOVERY -$${fmt(Math.abs(targetPnl))}`;
-      modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-orange-400/15 text-orange-400';
-      topLabel = 'Recovery';
-      topSub = `Cooling -$${fmt(Math.abs(targetPnl))}`;
-    } else if (isProfit) {
-      modeBadge.textContent = 'PROFIT +1%';
+    if (modeBadge) {
+      modeBadge.textContent = `+${targetPctStr}% / day`;
       modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
-      topLabel = 'Profit Day';
-      topSub = 'Targeting +1%';
-    } else {
-      modeBadge.textContent = 'DRAWDOWN -0.5%';
-      modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-danger/10 text-danger';
-      topLabel = 'Risk Day';
-      topSub = 'Capped -0.5%';
     }
-    $('bot-target').textContent = (targetPnl >= 0 ? '+' : '-') + '$' + fmt(Math.abs(targetPnl));
-    $('bot-target').className = 'font-mono text-sm ' + (isProfit ? (mode === 'boom' ? 'text-yellow-400' : 'text-accent') : 'text-danger');
-    $('bot-realized').textContent = (pnl >= 0 ? '+' : '-') + '$' + fmt(Math.abs(pnl));
-    $('bot-realized').className = 'font-mono text-sm ' + (pnl >= 0 ? 'text-accent' : 'text-danger');
+    if ($('bot-target')) {
+      $('bot-target').textContent = '+$' + fmt(Math.abs(targetPnl));
+      $('bot-target').className = 'font-mono text-sm text-accent';
+    }
+    if ($('bot-realized')) {
+      $('bot-realized').textContent = (pnl >= 0 ? '+' : '-') + '$' + fmt(Math.abs(pnl));
+      $('bot-realized').className = 'font-mono text-sm ' + (pnl >= 0 ? 'text-accent' : 'text-danger');
+    }
     const barEl = $('bot-target-bar');
-    barEl.style.width = `${Math.max(0, Math.min(100, botStatus.progress_pct))}%`;
-    barEl.className = 'h-full transition-all ' + (mode === 'boom' ? 'bg-yellow-400' : (isProfit ? 'bg-accent' : 'bg-danger'));
+    if (barEl) {
+      barEl.style.width = `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
+      barEl.className = 'h-full transition-all bg-accent';
+    }
 
-    // Top stat card mirror
+    // Top stat tile mirror
     if (Number(u.balance) > 0) {
-      $('bot-status-text').textContent = topLabel;
-      const cls = mode === 'boom' ? 'text-yellow-400' : (mode === 'recovery' ? 'text-orange-400' : (isProfit ? 'text-accent' : 'text-danger'));
-      $('bot-status-text').className = 'text-2xl font-bold ' + cls;
-      $('bot-status-sub').textContent = topSub;
+      $('bot-status-text').textContent = 'Active';
+      $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
+      $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
     } else {
       $('bot-status-text').textContent = 'Armed';
-      $('bot-status-text').className = 'text-2xl font-bold text-muted';
-      $('bot-status-sub').textContent = 'Deposit to begin';
+      $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-muted';
+      $('bot-status-sub').textContent = 'Add fund to begin';
     }
 
     // Live trades feed
@@ -479,11 +382,9 @@ async function loadDashboard() {
 
 function stopDashboardPolling() {
   if (dashboardPollTimer) { clearInterval(dashboardPollTimer); dashboardPollTimer = null; }
-  if (chartState.tickerTimer) { clearInterval(chartState.tickerTimer); chartState.tickerTimer = null; }
-  if (chartState.reconnectTimer) { clearTimeout(chartState.reconnectTimer); chartState.reconnectTimer = null; }
-  if (chartState.ws) { try { chartState.ws.onclose = null; chartState.ws.close(); } catch {} chartState.ws = null; }
   if (networkState.timer) { clearInterval(networkState.timer); networkState.timer = null; }
   if (networkState.logTimer) { clearInterval(networkState.logTimer); networkState.logTimer = null; }
+  teardownChart();
   lastBotTradeId = 0;
   lastBotToastAt = 0;
   prevBalance = null;
