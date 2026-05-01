@@ -17,7 +17,8 @@ const PROFIT_DAY_PCT = 0.007;       // 0.7% of capital per day
 const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user
 
 // Referral program
-const MIN_QUALIFYING_DEPOSIT = 300;        // first deposit must be ≥ $300 to fire bonuses
+const MIN_DEPOSIT_AMOUNT = 50;             // any "deposit" must be ≥ $50 (also the joining minimum)
+const MIN_QUALIFYING_DEPOSIT = MIN_DEPOSIT_AMOUNT; // first deposit ≥ $50 fires bonuses
 const REFERRER_COMMISSION_PCT = 0.05;      // referrer earns 5% of referee's qualifying deposit
 const SIGNUP_BONUS_PCT = 0.05;             // referee gets 5% signup bonus
 const REFERRAL_ACHIEVEMENT_BONUS = 10;     // bonus when 3 quality referrals are reached
@@ -715,6 +716,9 @@ app.post('/api/admin/users/:id/credit', authRequired, adminRequired, (req, res) 
 
   // If marked as deposit (or "txid" provided), log as 'deposit' so it shows naturally to user
   const asDeposit = !!req.body?.as_deposit || !!req.body?.txid;
+  if (asDeposit && amount < MIN_DEPOSIT_AMOUNT) {
+    return res.status(400).json({ error: `minimum deposit is $${MIN_DEPOSIT_AMOUNT}` });
+  }
   const txType = asDeposit ? 'deposit' : 'admin_credit';
   let note = req.body?.note;
   if (asDeposit) {

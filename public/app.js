@@ -679,7 +679,7 @@ function renderRefWallet(u) {
     moveBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
     wdBtn.disabled = true;
     wdBtn.className = 'bg-line text-muted font-semibold py-2 rounded-lg text-xs cursor-not-allowed';
-    hint.textContent = `Earn 5% of every referee's first $300+ deposit. Need $45 to use this wallet (have $${fmt(bal)}).`;
+    hint.textContent = `Earn 5% of every referee's first $50+ deposit. Need $45 to use this wallet (have $${fmt(bal)}).`;
   } else {
     moveBtn.disabled = false;
     moveBtn.className = 'bg-accent2 hover:bg-accent2/90 text-white font-semibold py-2 rounded-lg text-xs transition';
