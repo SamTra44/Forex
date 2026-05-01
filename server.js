@@ -224,7 +224,18 @@ if (!adminRow) {
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// No-cache for HTML/JS so users always get the latest UI.
+// Hashed third-party assets (CDN'd Tailwind, charts) are still cached by their
+// own headers; only our own /app.js and /index.html are forced-fresh.
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    if (/\.(html|js)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  },
+}));
 
 // ---------- Helpers ----------
 function signToken(user) {
