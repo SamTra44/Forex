@@ -322,14 +322,11 @@ async function loadDashboard() {
     renderUsdt(u, me.usdt_price);
     renderProfile(u);
     renderRefWallet(u);
-    $('stat-referrals').textContent = refs.referrals.length;
+    $('stat-commission').textContent = fmt(Number(u.referral_balance || 0));
+    $('stat-bonus').textContent = fmt(Number(u.bonus_balance || 0));
+    $('stat-ref-count').textContent = refs.referrals.length;
     $('referral-count-badge').textContent = refs.referrals.length;
     $('referral-code').textContent = u.referral_code;
-
-    const refEarnings = txs.transactions
-      .filter(t => t.type === 'referral_bonus')
-      .reduce((s, t) => s + Number(t.amount), 0);
-    $('stat-ref-earnings').textContent = fmt(refEarnings);
 
     // Today's P&L = realized daily P&L from server
     const pnl = Number(botStatus.daily_pnl) || 0;

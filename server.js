@@ -1235,6 +1235,34 @@ function botTick() {
 }
 setInterval(botTick, BOT_TICK_MS);
 
+// PWA manifest — lets users "install" the site as an app on iOS/Android home screens.
+app.get('/manifest.webmanifest', (_req, res) => {
+  res.type('application/manifest+json').json({
+    name: 'QuantEdge',
+    short_name: 'QuantEdge',
+    description: 'Algorithmic trading platform',
+    start_url: '/',
+    display: 'standalone',
+    orientation: 'portrait',
+    background_color: '#0a0e17',
+    theme_color: '#0a0e17',
+    icons: [
+      {
+        src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMGEwZTE3Ii8+PHBhdGggZD0iTTI0IDg4bDMyLTMyIDIwIDIwIDM2LTM2IiBmaWxsPSJub25lIiBzdHJva2U9IiMyMmQzYTciIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+',
+        sizes: '192x192',
+        type: 'image/svg+xml',
+        purpose: 'any',
+      },
+      {
+        src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMGEwZTE3Ii8+PHBhdGggZD0iTTI0IDg4bDMyLTMyIDIwIDIwIDM2LTM2IiBmaWxsPSJub25lIiBzdHJva2U9IiMyMmQzYTciIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+',
+        sizes: '512x512',
+        type: 'image/svg+xml',
+        purpose: 'any',
+      },
+    ],
+  });
+});
+
 // SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

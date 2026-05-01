@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0e17" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="QuantEdge" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMGEwZTE3Ii8+PHBhdGggZD0iTTI0IDg4bDMyLTMyIDIwIDIwIDM2LTM2IiBmaWxsPSJub25lIiBzdHJva2U9IiMyMmQzYTciIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" />
 <title>QuantEdge — Algo Trading Platform</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -25,7 +32,25 @@
   }
 </script>
 <style>
-  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0a0e17; color: #e5e7eb; }
+  html, body { -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: #0a0e17;
+    color: #e5e7eb;
+    /* iOS Safari safe-area insets so the layout doesn't sit under the notch */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: contain;
+  }
+  /* Allow buttons & inputs to look native on mobile */
+  button, [role="button"] { touch-action: manipulation; }
+  /* Larger tap targets on small screens */
+  @media (max-width: 640px) {
+    .scrollable { -webkit-overflow-scrolling: touch; }
+    /* Hide overflow x in tables */
+    table { font-size: 12px; }
+  }
   .glow { box-shadow: 0 0 40px rgba(34,211,167,0.08); }
   .grid-bg {
     background-image:
@@ -111,61 +136,66 @@
 
 <!-- Dashboard view -->
 <div id="view-dashboard" class="hidden min-h-screen">
-  <header class="border-b border-line bg-panel/60 backdrop-blur sticky top-0 z-30">
-    <div class="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
+  <header class="border-b border-line bg-panel/80 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-2">
         <svg class="w-6 h-6 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
         </svg>
-        <span class="text-lg font-bold gradient-text">QuantEdge</span>
-        <span class="ml-2 px-2 py-0.5 text-[10px] uppercase tracking-wider bg-accent/10 text-accent rounded">Live</span>
+        <span class="text-base sm:text-lg font-bold gradient-text">QuantEdge</span>
+        <span class="ml-1 sm:ml-2 px-1.5 py-0.5 text-[9px] sm:text-[10px] uppercase tracking-wider bg-accent/10 text-accent rounded">Live</span>
       </div>
-      <div class="flex items-center gap-4">
-        <span id="user-name-pill" class="text-sm text-gray-300"></span>
-        <button id="btn-logout" class="text-sm text-muted hover:text-danger transition">Sign out</button>
+      <div class="flex items-center gap-2 sm:gap-4">
+        <span id="user-name-pill" class="hidden sm:inline text-sm text-gray-300"></span>
+        <button id="btn-logout" class="text-xs sm:text-sm text-muted hover:text-danger transition px-2 py-1">Sign out</button>
       </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-6 py-6">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
     <!-- Greeting + Top stats -->
-    <div class="flex items-end justify-between mb-6 flex-wrap gap-4">
+    <div class="flex items-end justify-between mb-5 flex-wrap gap-3">
       <div>
-        <h1 class="text-2xl font-semibold">Welcome back, <span id="greet-name" class="text-accent"></span></h1>
-        <p class="text-sm text-muted mt-1">Algorithmic trading dashboard</p>
+        <h1 class="text-xl sm:text-2xl font-semibold">Welcome back, <span id="greet-name" class="text-accent"></span></h1>
+        <p class="text-xs sm:text-sm text-muted mt-0.5 sm:mt-1">Algorithmic trading dashboard</p>
       </div>
-      <div class="flex items-center gap-2 text-xs">
-        <span class="w-2 h-2 rounded-full bg-accent pulse-dot"></span>
-        <span class="text-muted">Markets open · Live feed</span>
+      <div class="flex items-center gap-1.5 text-[11px] sm:text-xs">
+        <span class="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full bg-accent pulse-dot"></span>
+        <span class="text-muted">Markets open · Live</span>
       </div>
     </div>
 
-    <!-- Stat cards -->
-    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-      <div class="bg-card border border-line rounded-xl p-4">
-        <div class="text-xs uppercase tracking-wider text-muted mb-2">Account Balance</div>
-        <div class="text-2xl font-bold">$<span id="stat-balance">0.00</span></div>
-        <div class="text-[11px] text-muted mt-1">Available USD</div>
+    <!-- Stat cards: at-a-glance balances (responsive 2/3/6 grid) -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 mb-6">
+      <div class="bg-card border border-line rounded-xl p-3 sm:p-4">
+        <div class="text-[10px] sm:text-xs uppercase tracking-wider text-muted mb-1.5 sm:mb-2">Trading USD</div>
+        <div class="text-lg sm:text-xl lg:text-2xl font-bold">$<span id="stat-balance">0.00</span></div>
+        <div class="text-[10px] text-muted mt-1">Available</div>
       </div>
-      <div class="bg-card border border-line rounded-xl p-4">
-        <div class="text-xs uppercase tracking-wider text-muted mb-2">USDT Wallet</div>
-        <div class="text-2xl font-bold text-accent"><span id="stat-usdt">0.000000</span></div>
-        <div class="text-[11px] text-muted mt-1">≈ $<span id="stat-usdt-usd">0.00</span> · <span id="stat-usdt-price">$1.0000</span></div>
+      <div class="bg-card border border-line rounded-xl p-3 sm:p-4">
+        <div class="text-[10px] sm:text-xs uppercase tracking-wider text-muted mb-1.5 sm:mb-2">USDT Wallet</div>
+        <div class="text-lg sm:text-xl lg:text-2xl font-bold text-yellow-400"><span id="stat-usdt">0.000000</span></div>
+        <div class="text-[10px] text-muted mt-1">≈ $<span id="stat-usdt-usd">0.00</span></div>
       </div>
-      <div class="bg-card border border-line rounded-xl p-4">
-        <div class="text-xs uppercase tracking-wider text-muted mb-2">Today's P&amp;L</div>
-        <div class="text-2xl font-bold" id="stat-pnl-wrap"><span id="stat-pnl-sign">+</span>$<span id="stat-pnl">0.00</span></div>
-        <div class="text-[11px] text-muted mt-1"><span id="stat-trades-count">0</span> bot trades</div>
+      <div class="bg-card border border-line rounded-xl p-3 sm:p-4">
+        <div class="text-[10px] sm:text-xs uppercase tracking-wider text-muted mb-1.5 sm:mb-2">Ref Commission</div>
+        <div class="text-lg sm:text-xl lg:text-2xl font-bold text-yellow-400">$<span id="stat-commission">0.00</span></div>
+        <div class="text-[10px] text-muted mt-1"><span id="stat-ref-count">0</span> referrals</div>
       </div>
-      <div class="bg-card border border-line rounded-xl p-4">
-        <div class="text-xs uppercase tracking-wider text-muted mb-2">Referrals</div>
-        <div class="text-2xl font-bold text-accent2"><span id="stat-referrals">0</span></div>
-        <div class="text-[11px] text-muted mt-1">$<span id="stat-ref-earnings">0.00</span> earned</div>
+      <div class="bg-card border border-line rounded-xl p-3 sm:p-4">
+        <div class="text-[10px] sm:text-xs uppercase tracking-wider text-muted mb-1.5 sm:mb-2">Joining Bonus</div>
+        <div class="text-lg sm:text-xl lg:text-2xl font-bold text-accent">$<span id="stat-bonus">0.00</span></div>
+        <div class="text-[10px] text-muted mt-1">Min $45 to use</div>
       </div>
-      <div class="bg-card border border-line rounded-xl p-4">
-        <div class="text-xs uppercase tracking-wider text-muted mb-2">Bot Status</div>
-        <div class="text-2xl font-bold" id="bot-status-text">Idle</div>
-        <div class="text-[11px] text-muted mt-1" id="bot-status-sub">Not running</div>
+      <div class="bg-card border border-line rounded-xl p-3 sm:p-4">
+        <div class="text-[10px] sm:text-xs uppercase tracking-wider text-muted mb-1.5 sm:mb-2">Today's P&amp;L</div>
+        <div class="text-lg sm:text-xl lg:text-2xl font-bold" id="stat-pnl-wrap"><span id="stat-pnl-sign">+</span>$<span id="stat-pnl">0.00</span></div>
+        <div class="text-[10px] text-muted mt-1"><span id="stat-trades-count">0</span> trades</div>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-3 sm:p-4">
+        <div class="text-[10px] sm:text-xs uppercase tracking-wider text-muted mb-1.5 sm:mb-2">Bot Status</div>
+        <div class="text-lg sm:text-xl lg:text-2xl font-bold" id="bot-status-text">Idle</div>
+        <div class="text-[10px] text-muted mt-1" id="bot-status-sub">Not running</div>
       </div>
     </div>
 
