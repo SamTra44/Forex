@@ -12,7 +12,6 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMGEwZTE3Ii8+PHBhdGggZD0iTTI0IDg4bDMyLTMyIDIwIDIwIDM2LTM2IiBmaWxsPSJub25lIiBzdHJva2U9IiMyMmQzYTciIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PC9zdmc+" />
 <title>QuantEdge — Algo Trading Platform</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://s3.tradingview.com/tv.js"></script>
 <script>
   tailwind.config = {
     theme: {
@@ -217,7 +216,7 @@
 
     <!-- Trading panel -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-      <!-- Chart (TradingView) -->
+      <!-- Chart (TradingView embed widget) -->
       <div class="lg:col-span-2 bg-card border border-line rounded-xl overflow-hidden">
         <div class="px-5 py-3 border-b border-line flex items-center justify-between flex-wrap gap-2">
           <div class="flex items-center gap-2">
@@ -229,7 +228,37 @@
           </div>
           <div class="text-[11px] text-muted">Crypto · Forex · Stocks · Indices</div>
         </div>
-        <div id="tradingview_chart" style="height: 420px;"></div>
+        <!-- TradingView Widget BEGIN -->
+        <div class="tradingview-widget-container" style="height:480px;width:100%;">
+          <div class="tradingview-widget-container__widget" style="height:100%;width:100%;"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+          {
+            "autosize": true,
+            "symbol": "BINANCE:BTCUSDT",
+            "interval": "15",
+            "timezone": "Etc/UTC",
+            "theme": "dark",
+            "style": "1",
+            "locale": "en",
+            "toolbar_bg": "#0a0e17",
+            "backgroundColor": "#0a0e17",
+            "gridColor": "rgba(31, 41, 55, 0.5)",
+            "withdateranges": true,
+            "allow_symbol_change": true,
+            "save_image": false,
+            "hide_side_toolbar": false,
+            "hide_top_toolbar": false,
+            "hide_legend": false,
+            "hide_volume": false,
+            "details": false,
+            "calendar": false,
+            "hotlist": false,
+            "studies": ["Volume@tv-basicstudies"],
+            "support_host": "https://www.tradingview.com"
+          }
+          </script>
+        </div>
+        <!-- TradingView Widget END -->
       </div>
 
       <!-- Bot panel -->
@@ -394,13 +423,10 @@
         <!-- Right: Internal address card -->
         <div class="p-5">
           <div class="text-[10px] uppercase tracking-wider text-muted mb-3">Your USDT Address</div>
-          <div class="bg-bg border border-line rounded-lg p-3 mb-3 text-center">
-            <img id="usdt-qr" alt="QR" class="w-32 h-32 mx-auto rounded bg-white p-1.5" />
-          </div>
-          <code id="usdt-address" class="block text-[11px] font-mono text-yellow-400 break-all leading-snug bg-bg border border-line rounded-lg px-2.5 py-2 mb-2">--</code>
+          <code id="usdt-address" class="block text-[11px] font-mono text-yellow-400 break-all leading-snug bg-bg border border-line rounded-lg px-3 py-3 mb-2">--</code>
           <button id="btn-copy-usdt-addr" class="w-full text-xs px-3 py-2 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 rounded hover:bg-yellow-400/20 transition">Copy address</button>
           <div class="mt-3 bg-bg/60 border border-line rounded-lg p-2.5 text-[11px] text-gray-300 leading-snug">
-            Other QuantEdge users can send you USDT to this address — <span class="text-yellow-400">instant · 0% fee</span>. Internal only — do not share with external wallets, they cannot reach this address.
+            This is your unique QuantEdge wallet address — used internally to identify your account. Do not share with external wallets, they cannot reach this address.
           </div>
         </div>
       </div>
@@ -470,14 +496,41 @@
       </div>
     </div>
 
-    <!-- Live trades feed + Referral Code -->
+    <!-- Trade History (daily/weekly/monthly/yearly/lifetime) + Referral Code -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-      <div class="lg:col-span-2 bg-card border border-line rounded-xl">
-        <div class="px-5 py-3 border-b border-line flex items-center justify-between">
-          <h3 class="font-semibold">Live Trade Feed</h3>
-          <span class="text-[10px] uppercase tracking-wider text-muted">Bot executions</span>
+      <div class="lg:col-span-2 bg-card border border-line rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-line flex items-center justify-between flex-wrap gap-2">
+          <h3 class="font-semibold">Trade History</h3>
+          <div class="flex flex-wrap gap-1" id="history-period-tabs">
+            <button data-period="daily"    class="hist-tab text-[11px] px-3 py-1.5 rounded border border-accent bg-accent/10 text-accent transition">Daily</button>
+            <button data-period="weekly"   class="hist-tab text-[11px] px-3 py-1.5 rounded border border-line bg-bg text-muted hover:border-accent transition">Weekly</button>
+            <button data-period="monthly"  class="hist-tab text-[11px] px-3 py-1.5 rounded border border-line bg-bg text-muted hover:border-accent transition">Monthly</button>
+            <button data-period="yearly"   class="hist-tab text-[11px] px-3 py-1.5 rounded border border-line bg-bg text-muted hover:border-accent transition">Yearly</button>
+            <button data-period="lifetime" class="hist-tab text-[11px] px-3 py-1.5 rounded border border-line bg-bg text-muted hover:border-accent transition">Lifetime</button>
+          </div>
         </div>
-        <div class="overflow-x-auto scrollable max-h-72">
+
+        <!-- Summary tiles -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 p-4 sm:p-5 border-b border-line">
+          <div class="bg-bg border border-line rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Total P&amp;L</div>
+            <div id="hist-pnl" class="text-base sm:text-lg font-bold font-mono">$0.00</div>
+          </div>
+          <div class="bg-bg border border-line rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Trades</div>
+            <div id="hist-count" class="text-base sm:text-lg font-bold text-accent2">0</div>
+          </div>
+          <div class="bg-bg border border-line rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Wins / Losses</div>
+            <div class="text-base sm:text-lg font-bold"><span id="hist-wins" class="text-accent">0</span> <span class="text-muted">/</span> <span id="hist-losses" class="text-danger">0</span></div>
+          </div>
+          <div class="bg-bg border border-line rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Win Rate</div>
+            <div id="hist-winrate" class="text-base sm:text-lg font-bold text-accent">—</div>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto scrollable max-h-80">
           <table class="w-full text-sm">
             <thead class="bg-bg/50 text-xs uppercase tracking-wider text-muted sticky top-0">
               <tr>
@@ -485,7 +538,7 @@
                 <th class="text-left px-5 py-2.5">Side</th>
                 <th class="text-left px-5 py-2.5">Symbol</th>
                 <th class="text-left px-5 py-2.5">Status</th>
-                <th class="text-right px-5 py-2.5">P&amp;L</th>
+                <th class="text-right px-5 py-2.5 pr-5">P&amp;L</th>
               </tr>
             </thead>
             <tbody id="tbody-bot-trades"></tbody>
@@ -496,10 +549,24 @@
       <div class="space-y-4">
         <div class="bg-card border border-line rounded-xl p-5">
           <h3 class="font-semibold mb-1">Referral Code</h3>
-          <p class="text-xs text-muted mb-3">Earn $20 per signup</p>
+          <p class="text-xs text-muted mb-3">Share to earn 5% commission on every referee's first deposit ($50+)</p>
           <div class="flex items-center gap-2">
             <code id="referral-code" class="flex-1 bg-bg border border-line rounded-lg px-3 py-2 text-sm font-mono tracking-wider text-accent text-center"></code>
             <button id="btn-copy-ref" class="px-3 py-2 bg-bg border border-line rounded-lg text-sm hover:border-accent transition">Copy</button>
+          </div>
+          <div class="mt-4 grid grid-cols-3 gap-2 text-center">
+            <div class="bg-bg border border-line rounded-lg p-2">
+              <div class="text-[10px] uppercase tracking-wider text-muted">Invited</div>
+              <div id="rc-invited" class="text-base font-bold text-accent2">0</div>
+            </div>
+            <div class="bg-bg border border-line rounded-lg p-2">
+              <div class="text-[10px] uppercase tracking-wider text-muted">Earned</div>
+              <div class="text-base font-bold text-yellow-400">$<span id="rc-earned">0.00</span></div>
+            </div>
+            <div class="bg-bg border border-line rounded-lg p-2">
+              <div class="text-[10px] uppercase tracking-wider text-muted">Bonus</div>
+              <div class="text-base font-bold text-accent">$<span id="rc-bonus">0.00</span></div>
+            </div>
           </div>
         </div>
       </div>

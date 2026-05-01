@@ -151,52 +151,9 @@ function routeAfterAuth() {
   }
 }
 
-// ---------- Chart (TradingView widget) ----------
-// One-time init — TradingView handles symbol switching, intervals, indicators, and live price.
-let tvWidgetInitialised = false;
-function initChart() {
-  if (tvWidgetInitialised) return;
-  if (typeof TradingView === 'undefined') return;
-  const el = document.getElementById('tradingview_chart');
-  if (!el) return;
-  try {
-    new TradingView.widget({
-      container_id: 'tradingview_chart',
-      autosize: true,
-      symbol: 'BINANCE:BTCUSDT',
-      interval: '15',
-      timezone: 'Etc/UTC',
-      theme: 'dark',
-      style: '1',
-      locale: 'en',
-      toolbar_bg: '#0a0e17',
-      enable_publishing: false,
-      hide_side_toolbar: false,
-      allow_symbol_change: true,
-      withdateranges: true,
-      details: false,
-      hotlist: false,
-      calendar: false,
-      save_image: false,
-      studies: ['Volume@tv-basicstudies'],
-      overrides: {
-        'paneProperties.background': '#0a0e17',
-        'paneProperties.backgroundType': 'solid',
-        'paneProperties.vertGridProperties.color': '#1f2937',
-        'paneProperties.horzGridProperties.color': '#1f2937',
-        'scalesProperties.textColor': '#9ca3af',
-      },
-    });
-    tvWidgetInitialised = true;
-  } catch (err) {
-    console.warn('TradingView widget failed to load:', err.message);
-  }
-}
-
-function teardownChart() {
-  // TradingView widget cleans itself up on iframe unload; nothing for us to do.
-  tvWidgetInitialised = false;
-}
+// ---------- Chart ----------
+// TradingView's embed widget self-bootstraps from the inline JSON in
+// index.html (script src=embed-widget-advanced-chart.js). Nothing to init here.
 
 // ---------- Animated number ----------
 function animateBalance(el, target) {
@@ -224,13 +181,14 @@ let prevBalance = null;
 
 async function loadDashboard() {
   try {
-    const [me, txs, refs, trades, botStatus] = await Promise.all([
+    const [me, txs, refs, history, botStatus] = await Promise.all([
       API.req('/api/me'),
       API.req('/api/me/transactions'),
       API.req('/api/me/referrals'),
-      API.req('/api/me/bot/trades'),
+      API.req('/api/me/bot/history?period=' + encodeURIComponent(historyState.period)),
       API.req('/api/me/bot/status'),
     ]);
+    const trades = { trades: history.trades }; // legacy shape used below
     const u = me.user;
     $('user-name-pill').textContent = u.name;
     $('greet-name').textContent = u.name.split(' ')[0];
@@ -293,8 +251,14 @@ async function loadDashboard() {
       $('bot-status-sub').textContent = 'Add fund to begin';
     }
 
-    // Live trades feed
+    // Trade history (filtered by period)
     renderBotTrades(trades.trades);
+    renderHistorySummary(history.summaries);
+
+    // Referral code mini-stats
+    setText('rc-invited', refs.referrals.length);
+    setText('rc-earned', fmt(Number(u.referral_balance || 0)));
+    setText('rc-bonus', fmt(Number(u.bonus_balance || 0)));
 
     // Notify deposit arrivals
     notifyDepositArrivals(txs.transactions);
@@ -368,7 +332,6 @@ async function loadDashboard() {
 
     // Set up polling once
     if (!dashboardPollTimer) {
-      initChart();
       initNetworkPanel();
       dashboardPollTimer = setInterval(loadDashboard, 2500);
     }
@@ -384,17 +347,46 @@ function stopDashboardPolling() {
   if (dashboardPollTimer) { clearInterval(dashboardPollTimer); dashboardPollTimer = null; }
   if (networkState.timer) { clearInterval(networkState.timer); networkState.timer = null; }
   if (networkState.logTimer) { clearInterval(networkState.logTimer); networkState.logTimer = null; }
-  teardownChart();
   lastBotTradeId = 0;
   lastBotToastAt = 0;
   prevBalance = null;
 }
 
+// ---------- Trade history ----------
+const historyState = { period: 'daily' };
+
+function renderHistorySummary(summaries) {
+  if (!summaries) return;
+  const s = summaries[historyState.period];
+  if (!s) return;
+  setText('hist-pnl', (s.pnl >= 0 ? '+$' : '-$') + fmt(Math.abs(s.pnl)));
+  const pnlEl = $('hist-pnl');
+  if (pnlEl) pnlEl.className = 'text-base sm:text-lg font-bold font-mono ' + (s.pnl >= 0 ? 'text-accent' : 'text-danger');
+  setText('hist-count', s.count);
+  setText('hist-wins', s.wins);
+  setText('hist-losses', s.losses);
+  setText('hist-winrate', s.win_rate == null ? '—' : s.win_rate + '%');
+}
+
+document.querySelectorAll('.hist-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    historyState.period = btn.dataset.period || 'daily';
+    document.querySelectorAll('.hist-tab').forEach(b => {
+      const active = b.dataset.period === historyState.period;
+      b.className = active
+        ? 'hist-tab text-[11px] px-3 py-1.5 rounded border border-accent bg-accent/10 text-accent transition'
+        : 'hist-tab text-[11px] px-3 py-1.5 rounded border border-line bg-bg text-muted hover:border-accent transition';
+    });
+    loadDashboard();
+  });
+});
+
 function renderBotTrades(trades) {
   const body = $('tbody-bot-trades');
+  if (!body) return;
   body.innerHTML = '';
-  if (trades.length === 0) {
-    body.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-10 text-sm">Bot is idle. Start it to see live trades.</td></tr>`;
+  if (!trades || trades.length === 0) {
+    body.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-10 text-sm">No trades in this period.</td></tr>`;
     return;
   }
   trades.forEach(t => {
@@ -708,8 +700,6 @@ let usdtState = {
   usdBalance: 0,
   price: 1,
   address: '',
-  lookupTimer: null,
-  lastQrAddr: '',
 };
 
 function renderUsdt(user, priceObj) {
@@ -733,14 +723,8 @@ function renderUsdt(user, priceObj) {
   $('usdt-live-price').textContent = '$' + price.toFixed(4);
   $('usdt-price-source').textContent = source === 'coingecko' ? 'CoinGecko' : 'Cached';
 
-  // Address card + QR
-  const addr = user.usdt_address || '--';
-  $('usdt-address').textContent = addr;
-  if (addr && addr !== '--' && usdtState.lastQrAddr !== addr) {
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&data=${encodeURIComponent(addr)}`;
-    $('usdt-qr').src = qrUrl;
-    usdtState.lastQrAddr = addr;
-  }
+  // Address card
+  $('usdt-address').textContent = user.usdt_address || '--';
 
   // Refresh tab previews
   recalcUsdtPreviews();

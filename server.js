@@ -1147,6 +1147,58 @@ app.get('/api/me/bot/trades', authRequired, (req, res) => {
   res.json({ trades: rows });
 });
 
+// Trade history with period summaries (daily / weekly / monthly / yearly / lifetime)
+const PERIOD_FILTERS = {
+  daily:    "AND date(created_at) = date('now')",
+  weekly:   "AND datetime(created_at) >= datetime('now', '-7 days')",
+  monthly:  "AND datetime(created_at) >= datetime('now', '-30 days')",
+  yearly:   "AND datetime(created_at) >= datetime('now', '-365 days')",
+  lifetime: '',
+};
+
+app.get('/api/me/bot/history', authRequired, (req, res) => {
+  const period = String(req.query.period || 'daily').toLowerCase();
+  if (!(period in PERIOD_FILTERS)) {
+    return res.status(400).json({ error: 'invalid period (daily|weekly|monthly|yearly|lifetime)' });
+  }
+
+  // All-period summaries computed in one pass (each is a fast indexed query
+  // on a small per-user trade set).
+  const summaries = {};
+  for (const [p, where] of Object.entries(PERIOD_FILTERS)) {
+    const row = db.prepare(`
+      SELECT
+        COALESCE(SUM(amount), 0)            AS pnl,
+        SUM(CASE WHEN amount > 0 THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN amount < 0 THEN 1 ELSE 0 END) AS losses,
+        COUNT(*)                            AS count
+      FROM transactions
+      WHERE user_id = ? AND type = 'bot_trade' ${where}
+    `).get(req.user.id);
+    const wins = Number(row.wins) || 0;
+    const losses = Number(row.losses) || 0;
+    const total = wins + losses;
+    summaries[p] = {
+      pnl: +Number(row.pnl).toFixed(2),
+      wins,
+      losses,
+      count: Number(row.count) || 0,
+      win_rate: total > 0 ? +(100 * wins / total).toFixed(1) : null,
+    };
+  }
+
+  // Trades for the selected period (most recent 200)
+  const where = PERIOD_FILTERS[period];
+  const trades = db.prepare(`
+    SELECT id, amount, note, created_at
+    FROM transactions
+    WHERE user_id = ? AND type = 'bot_trade' ${where}
+    ORDER BY id DESC LIMIT 200
+  `).all(req.user.id);
+
+  res.json({ period, summaries, trades });
+});
+
 // Deterministic per-user trade slots (each user gets 2 distinct UTC hours per day).
 function userSlotHours(userId) {
   const slot1 = 8 + (((userId | 0) * 7919) >>> 0) % 6;   // 8..13
