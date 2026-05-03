@@ -215,20 +215,26 @@ async function loadDashboard() {
     $('bot-wins').textContent = wins;
     $('bot-losses').textContent = losses;
 
-    // Bot mode + target — bot is fixed at 2 trades/day, 0.7% of capital
+    // Bot mode + target
     const targetPnl = Number(botStatus.target_pnl) || 0;
     const targetPctNum = Number(botStatus.target_pct || 0);
     const targetPctStr = (targetPctNum * 100).toFixed(2);
     const tradesDone = Number(botStatus.daily_trade_count || 0);
     const tradesPerDay = Number(botStatus.trades_per_day || 2);
+    const isDemo = botStatus.mode === 'demo';
     const modeBadge = $('bot-mode-badge');
     if (modeBadge) {
-      modeBadge.textContent = `+${targetPctStr}% / day`;
-      modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
+      if (isDemo) {
+        modeBadge.textContent = '🔥 LIVE TRADING';
+        modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-yellow-400/15 text-yellow-400 font-bold';
+      } else {
+        modeBadge.textContent = `+${targetPctStr}% / day`;
+        modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
+      }
     }
     if ($('bot-target')) {
-      $('bot-target').textContent = '+$' + fmt(Math.abs(targetPnl));
-      $('bot-target').className = 'font-mono text-sm text-accent';
+      $('bot-target').textContent = isDemo ? '$10–$100 / trade' : '+$' + fmt(Math.abs(targetPnl));
+      $('bot-target').className = 'font-mono text-sm ' + (isDemo ? 'text-yellow-400' : 'text-accent');
     }
     if ($('bot-realized')) {
       $('bot-realized').textContent = (pnl >= 0 ? '+' : '-') + '$' + fmt(Math.abs(pnl));
@@ -236,15 +242,21 @@ async function loadDashboard() {
     }
     const barEl = $('bot-target-bar');
     if (barEl) {
-      barEl.style.width = `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
-      barEl.className = 'h-full transition-all bg-accent';
+      barEl.style.width = isDemo ? '100%' : `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
+      barEl.className = 'h-full transition-all ' + (isDemo ? 'bg-yellow-400' : 'bg-accent');
     }
 
     // Top stat tile mirror
     if (Number(u.balance) > 0) {
-      $('bot-status-text').textContent = 'Active';
-      $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
-      $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
+      if (isDemo) {
+        $('bot-status-text').textContent = 'Live 🔥';
+        $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-yellow-400';
+        $('bot-status-sub').textContent = `${tradesDone} trades today`;
+      } else {
+        $('bot-status-text').textContent = 'Active';
+        $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
+        $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
+      }
     } else {
       $('bot-status-text').textContent = 'Armed';
       $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-muted';

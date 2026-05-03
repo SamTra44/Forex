@@ -13,8 +13,18 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod-' + crypto.randomBytes(8).toString('hex');
 
 // Bot
-const PROFIT_DAY_PCT = 0.007;       // 0.7% of capital per day
-const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user
+const PROFIT_DAY_PCT = 0.007;       // 0.7% of capital per day (production)
+const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user (production)
+
+// === TEMPORARY DEMO MODE ===
+// Frequent live-looking trades with $10-$100 random P&L per trade.
+// Flip DEMO_MODE = false to revert to the strict 2-trades-per-day bot.
+const DEMO_MODE = true;
+const DEMO_TICK_MS = 10_000;         // a trade every ~10s per active user
+const DEMO_MIN_PNL = 10;             // $ minimum per trade
+const DEMO_MAX_PNL = 100;            // $ maximum per trade
+const DEMO_WIN_RATE = 0.85;          // 85 % of trades are profitable
+// ===========================
 
 // Referral program
 const MIN_DEPOSIT_AMOUNT = 50;             // any "deposit" must be ≥ $50 (also the joining minimum)
@@ -1213,6 +1223,22 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   const dailyPnl = (user.daily_pnl_date === today) ? Number(user.daily_pnl) : 0;
   const tradeCount = (user.daily_pnl_date === today) ? Number(user.daily_trade_count || 0) : 0;
   const effectiveStart = Math.max(1, Number(user.balance) - dailyPnl);
+
+  if (DEMO_MODE) {
+    return res.json({
+      mode: 'demo',
+      is_profit_day: true,
+      target_pct: 0,
+      target_pnl: 0,
+      daily_pnl: dailyPnl,
+      day_start_balance: effectiveStart,
+      trades_per_day: -1,
+      daily_trade_count: tradeCount,
+      progress_pct: 0,
+      demo: { min: DEMO_MIN_PNL, max: DEMO_MAX_PNL, win_rate: DEMO_WIN_RATE, tick_ms: DEMO_TICK_MS },
+    });
+  }
+
   const targetPnl = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
   const [slot1, slot2] = userSlotHours(user.id);
   res.json({
@@ -1229,7 +1255,49 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   });
 });
 
+// --- DEMO MODE: simple random-walk bot for visible live trading ---
+function demoTick() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const activeUsers = db.prepare(`
+    SELECT id, balance, daily_pnl, daily_pnl_date
+    FROM users WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
+  `).all();
+  if (activeUsers.length === 0) return;
+
+  const resetDay = db.prepare(`UPDATE users SET daily_pnl = 0, daily_trade_count = 0, daily_pnl_date = ? WHERE id = ?`);
+  const updateTrade = db.prepare(`
+    UPDATE users
+    SET balance = balance + ?, daily_pnl = daily_pnl + ?, daily_trade_count = daily_trade_count + 1, daily_pnl_date = ?
+    WHERE id = ?
+  `);
+  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
+
+  for (const u of activeUsers) {
+    if (u.daily_pnl_date !== today) resetDay.run(today, u.id);
+
+    const win = Math.random() < DEMO_WIN_RATE;
+    const mag = +(DEMO_MIN_PNL + Math.random() * (DEMO_MAX_PNL - DEMO_MIN_PNL)).toFixed(2);
+    let pnl = win ? mag : -mag;
+
+    // Safety: never push the user below $1.
+    if (pnl < 0 && Math.abs(pnl) > Number(u.balance) - 1) {
+      pnl = -(Number(u.balance) - 1);
+      pnl = +pnl.toFixed(2);
+      if (Math.abs(pnl) < 0.01) continue;
+    }
+
+    const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+    const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
+    const note = `${side} ${symbol} ${pnl >= 0 ? 'TP hit' : 'SL hit'}`;
+
+    updateTrade.run(pnl, pnl, today, u.id);
+    insertTx.run(u.id, pnl, note);
+  }
+}
+
 function botTick() {
+  if (DEMO_MODE) return demoTick();
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
@@ -1285,7 +1353,7 @@ function botTick() {
     insertTx.run(u.id, pnl, note);
   }
 }
-setInterval(botTick, BOT_TICK_MS);
+setInterval(botTick, DEMO_MODE ? DEMO_TICK_MS : BOT_TICK_MS);
 
 // PWA manifest — lets users "install" the site as an app on iOS/Android home screens.
 app.get('/manifest.webmanifest', (_req, res) => {
