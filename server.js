@@ -19,7 +19,7 @@ const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user (produ
 // === TEMPORARY DEMO MODE ===
 // Frequent live-looking trades with $10-$100 random P&L per trade.
 // Flip DEMO_MODE = false to revert to the strict 2-trades-per-day bot.
-const DEMO_MODE = true;
+const DEMO_MODE = false;
 const DEMO_TICK_MS = 10_000;         // a trade every ~10s per active user
 const DEMO_MIN_PNL = 10;             // $ minimum per trade
 const DEMO_MAX_PNL = 100;            // $ maximum per trade
