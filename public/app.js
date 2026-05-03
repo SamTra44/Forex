@@ -196,6 +196,10 @@ async function loadDashboard() {
     renderUsdt(u, me.usdt_price);
     renderProfile(u);
     renderRefWallet(u);
+    loadDepositInfo(u);
+    loadWithdrawInfo();
+    loadMyDeposits();
+    loadMyWithdrawals();
     const setText = (id, val) => { const el = $(id); if (el) el.textContent = val; };
     setText('stat-commission', fmt(Number(u.referral_balance || 0)));
     setText('stat-bonus', fmt(Number(u.bonus_balance || 0)));
@@ -221,20 +225,14 @@ async function loadDashboard() {
     const targetPctStr = (targetPctNum * 100).toFixed(2);
     const tradesDone = Number(botStatus.daily_trade_count || 0);
     const tradesPerDay = Number(botStatus.trades_per_day || 2);
-    const isDemo = botStatus.mode === 'demo';
     const modeBadge = $('bot-mode-badge');
     if (modeBadge) {
-      if (isDemo) {
-        modeBadge.textContent = '🔥 LIVE TRADING';
-        modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-yellow-400/15 text-yellow-400 font-bold';
-      } else {
-        modeBadge.textContent = `+${targetPctStr}% / day`;
-        modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
-      }
+      modeBadge.textContent = `+${targetPctStr}% / day`;
+      modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
     }
     if ($('bot-target')) {
-      $('bot-target').textContent = isDemo ? '$10–$100 / trade' : '+$' + fmt(Math.abs(targetPnl));
-      $('bot-target').className = 'font-mono text-sm ' + (isDemo ? 'text-yellow-400' : 'text-accent');
+      $('bot-target').textContent = '+$' + fmt(Math.abs(targetPnl));
+      $('bot-target').className = 'font-mono text-sm text-accent';
     }
     if ($('bot-realized')) {
       $('bot-realized').textContent = (pnl >= 0 ? '+' : '-') + '$' + fmt(Math.abs(pnl));
@@ -242,21 +240,15 @@ async function loadDashboard() {
     }
     const barEl = $('bot-target-bar');
     if (barEl) {
-      barEl.style.width = isDemo ? '100%' : `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
-      barEl.className = 'h-full transition-all ' + (isDemo ? 'bg-yellow-400' : 'bg-accent');
+      barEl.style.width = `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
+      barEl.className = 'h-full transition-all bg-accent';
     }
 
     // Top stat tile mirror
     if (Number(u.balance) > 0) {
-      if (isDemo) {
-        $('bot-status-text').textContent = 'Live 🔥';
-        $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-yellow-400';
-        $('bot-status-sub').textContent = `${tradesDone} trades today`;
-      } else {
-        $('bot-status-text').textContent = 'Active';
-        $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
-        $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
-      }
+      $('bot-status-text').textContent = 'Active';
+      $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
+      $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
     } else {
       $('bot-status-text').textContent = 'Armed';
       $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-muted';
@@ -524,6 +516,207 @@ function initNetworkPanel() {
   networkState.timer = setInterval(renderNetworkNodes, 4500);
   networkState.logTimer = setInterval(tickLog, 1100);
 }
+
+// ---------- Cash flow: Deposit + External Withdraw ----------
+const cashflowState = { tab: 'deposit', depositInfo: null, withdrawInfo: null };
+
+function statusPill(status) {
+  if (status === 'pending')  return `<span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-400/10 text-yellow-400">Pending</span>`;
+  if (status === 'approved' || status === 'success') return `<span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-accent/10 text-accent">Approved</span>`;
+  if (status === 'rejected') return `<span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-danger/10 text-danger">Rejected</span>`;
+  return `<span class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-line text-muted">${escapeHtml(status || '—')}</span>`;
+}
+
+document.querySelectorAll('.cf-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    cashflowState.tab = btn.dataset.cfTab;
+    document.querySelectorAll('.cf-tab').forEach(b => {
+      const active = b.dataset.cfTab === cashflowState.tab;
+      b.className = active
+        ? 'cf-tab px-4 py-2 text-sm font-medium border-b-2 border-accent text-accent'
+        : 'cf-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-gray-300 transition';
+    });
+    document.querySelectorAll('.cf-pane').forEach(p => p.classList.add('hidden'));
+    const tgt = $('cf-pane-' + cashflowState.tab);
+    if (tgt) tgt.classList.remove('hidden');
+  });
+});
+
+async function loadDepositInfo(user) {
+  try {
+    const info = await API.req('/api/deposit-info');
+    cashflowState.depositInfo = info;
+    setText('dep-address', info.address || '--');
+    setText('dep-min', info.min_usdt);
+    setText('dep-ref', user ? `USER-${user.id}` : 'USER-?');
+  } catch {}
+}
+
+async function loadWithdrawInfo() {
+  try {
+    const w = await API.req('/api/me/withdraw-info');
+    cashflowState.withdrawInfo = w;
+    setText('wd-early-days', w.early_window_days);
+    setText('wd-early-pct',  Math.round((w.fee_pct === w.early_pct ? w.early_pct : 0.25) * 100) + '%');
+    setText('wd-normal-pct', Math.round(0.20 * 100) + '%');
+    setText('wd-available', fmt(w.available_usd));
+    setText('wd-rate', (w.usdt_price || 1).toFixed(4));
+    const ctx = $('wd-fee-context');
+    if (ctx) {
+      ctx.textContent = w.is_early
+        ? `Account is ${Math.round(w.age_days)} days old → 25% early-withdrawal fee.`
+        : `Account is ${Math.round(w.age_days)} days old → 20% standard fee.`;
+    }
+    const note = $('wd-kyc-note');
+    const btn = $('btn-wd-submit');
+    if (w.kyc_status === 'approved') {
+      note?.classList.add('hidden');
+      if (btn) { btn.disabled = false; btn.className = 'w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition'; }
+    } else {
+      note?.classList.remove('hidden');
+      if (btn) { btn.disabled = true; btn.className = 'w-full bg-line text-muted font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed'; }
+    }
+    recalcWithdrawQuote();
+  } catch {}
+}
+
+function recalcWithdrawQuote() {
+  const w = cashflowState.withdrawInfo;
+  if (!w) return;
+  const amtEl = $('wd-amount');
+  const gross = Number(amtEl?.value) || 0;
+  const fee = +(gross * w.fee_pct).toFixed(2);
+  const net = +(gross - fee).toFixed(2);
+  const price = w.usdt_price || 1;
+  setText('wd-gross', fmt(gross));
+  setText('wd-fee-pct', Math.round(w.fee_pct * 100));
+  setText('wd-fee', fmt(fee));
+  setText('wd-net', fmt(Math.max(0, net)));
+  setText('wd-net-usdt', fmt6(Math.max(0, net) / price));
+}
+
+async function loadMyDeposits() {
+  try {
+    const d = await API.req('/api/me/deposits');
+    const tbody = $('tbody-my-deposits');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!d.deposits.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-6">No deposit requests yet.</td></tr>`;
+      return;
+    }
+    d.deposits.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-line';
+      const noteCell = r.status === 'rejected' && r.reject_reason
+        ? escapeHtml(r.reject_reason)
+        : (r.status === 'approved' && r.credited_usd != null ? `+ $${fmt(r.credited_usd)} credited` : '');
+      tr.innerHTML = `
+        <td class="px-3 py-2 text-muted">${fmtDate(r.created_at)}</td>
+        <td class="px-3 py-2 text-right font-mono text-yellow-400">${fmt6(r.amount_usdt)} USDT</td>
+        <td class="px-3 py-2">${statusPill(r.status)}</td>
+        <td class="px-3 py-2 text-gray-400">${noteCell}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch {}
+}
+
+async function loadMyWithdrawals() {
+  try {
+    const d = await API.req('/api/me/withdrawals');
+    const tbody = $('tbody-my-withdrawals');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!d.withdrawals.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-6">No withdrawal requests yet.</td></tr>`;
+      return;
+    }
+    d.withdrawals.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-line';
+      const addr = r.to_address || '';
+      const short = addr ? addr.slice(0, 8) + '…' + addr.slice(-6) : '—';
+      tr.innerHTML = `
+        <td class="px-3 py-2 text-muted">${fmtDate(r.created_at)}</td>
+        <td class="px-3 py-2 text-right font-mono text-accent">${fmt6(r.net_usdt)} USDT</td>
+        <td class="px-3 py-2 font-mono text-[10px]" title="${escapeHtml(addr)}">${short}</td>
+        <td class="px-3 py-2">${statusPill(r.status)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch {}
+}
+
+// File preview + form handlers
+document.addEventListener('change', async (e) => {
+  if (e.target?.matches('#form-deposit-request input[type="file"]')) {
+    const file = e.target.files[0];
+    const img = $('dep-preview');
+    if (!file || !img) return;
+    try {
+      const url = await readImageAsDataUrl(file);
+      img.src = url;
+      img.classList.remove('hidden');
+    } catch (err) { toast(err.message, 'error'); }
+  }
+});
+
+document.addEventListener('input', (e) => {
+  if (e.target?.id === 'wd-amount') recalcWithdrawQuote();
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'btn-dep-copy') {
+    const addr = $('dep-address')?.textContent;
+    if (!addr || addr === '--') return;
+    navigator.clipboard.writeText(addr).then(() => toast('Address copied', 'success')).catch(() => toast('Copy failed', 'error'));
+  }
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target?.id === 'form-deposit-request') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const file = fd.get('screenshot');
+    try {
+      const screenshot = await readImageAsDataUrl(file);
+      await API.req('/api/me/deposits', {
+        method: 'POST',
+        body: JSON.stringify({
+          amount_usdt: Number(fd.get('amount_usdt')),
+          txid: fd.get('txid') || undefined,
+          screenshot,
+        }),
+      });
+      e.target.reset();
+      $('dep-preview')?.classList.add('hidden');
+      toast('Deposit submitted — admin will verify within 24 hrs', 'success');
+      loadMyDeposits();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+  if (e.target?.id === 'form-external-withdraw') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const r = await API.req('/api/me/withdrawals', {
+        method: 'POST',
+        body: JSON.stringify({
+          amount_usd: Number(fd.get('amount_usd')),
+          to_address: fd.get('to_address'),
+        }),
+      });
+      e.target.reset();
+      toast(`Withdrawal queued · net ${fmt6(r.request.net_usdt)} USDT in ~24h`, 'success');
+      loadDashboard();
+      loadMyWithdrawals();
+      loadWithdrawInfo();
+    } catch (err) { toast(err.message, 'error'); }
+    return;
+  }
+});
 
 // ---------- Profile + Referral Wallet + KYC ----------
 function renderProfile(u) {
@@ -870,7 +1063,8 @@ async function loadAdmin() {
   try {
     const u = API.user();
     $('admin-name-pill').textContent = u.name;
-    loadDemoState();
+    loadDepositAddressConfig();
+    loadAdminDeposits();          // for the pending count badge
     const [stats, users, txs] = await Promise.all([
       API.req('/api/admin/stats'),
       API.req('/api/admin/users'),
@@ -949,55 +1143,132 @@ async function loadAdmin() {
 
 $('btn-refresh-admin').addEventListener('click', loadAdmin);
 
-// ---------- Admin · Demo Mode ----------
-async function loadDemoState() {
+// ---------- Admin · Deposit Address config ----------
+async function loadDepositAddressConfig() {
   try {
-    const s = await API.req('/api/admin/demo-mode');
-    const badge = $('demo-state-badge');
-    const startBtn = $('btn-demo-start');
-    const stopBtn = $('btn-demo-stop');
-    const stats = $('demo-stats-line');
-    if (s.active) {
-      badge.textContent = '● Active';
-      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400 border border-yellow-400/30';
-      startBtn.classList.add('hidden');
-      stopBtn.classList.remove('hidden');
-      const since = s.started_at ? fmtDate(s.started_at) : '—';
-      stats.classList.remove('hidden');
-      stats.innerHTML = `Started: <span class="text-yellow-400">${escapeHtml(since)}</span> · Demo trades: <span class="text-yellow-400">${s.trade_count}</span> · Demo P&L: <span class="text-yellow-400">$${fmt(s.total_pnl)}</span> · Users affected: <span class="text-yellow-400">${s.users_affected}</span>`;
-    } else {
-      badge.textContent = 'Inactive';
-      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-line text-muted';
-      startBtn.classList.remove('hidden');
-      stopBtn.classList.add('hidden');
-      stats.classList.add('hidden');
-      stats.innerHTML = '';
-    }
-  } catch (err) {
-    // Silent — admin might not be loaded yet
+    const c = await API.req('/api/admin/config/deposit-address');
+    setText('dep-addr-current', c.address || '—');
+  } catch {}
+}
+
+document.addEventListener('submit', async (e) => {
+  if (e.target?.id === 'form-dep-addr') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const c = await API.req('/api/admin/config/deposit-address', {
+        method: 'POST',
+        body: JSON.stringify({ address: fd.get('address') }),
+      });
+      toast('Deposit address updated', 'success');
+      e.target.reset();
+      setText('dep-addr-current', c.address);
+    } catch (err) { toast(err.message, 'error'); }
   }
+});
+
+// ---------- Admin · Deposits ----------
+async function loadAdminDeposits() {
+  try {
+    const filter = $('dep-filter')?.value || '';
+    const url = filter ? `/api/admin/deposits?status=${encodeURIComponent(filter)}` : '/api/admin/deposits';
+    const data = await API.req(url);
+    setText('dep-stat-pending', data.counts.pending || 0);
+    setText('dep-stat-approved', data.counts.approved || 0);
+    setText('dep-stat-rejected', data.counts.rejected || 0);
+    setText('dep-stat-total', data.counts.total || 0);
+    const badge = $('dep-pending-badge');
+    if (badge) {
+      if (data.counts.pending > 0) { badge.classList.remove('hidden'); badge.textContent = data.counts.pending; }
+      else badge.classList.add('hidden');
+    }
+
+    const tbody = $('tbody-deposits');
+    tbody.innerHTML = '';
+    if (!data.deposits.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-10 text-sm">No deposit requests${filter ? ` (${filter})` : ''}</td></tr>`;
+      return;
+    }
+    data.deposits.forEach(d => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-line hover:bg-bg/40';
+      const txShort = d.txid ? d.txid.slice(0, 8) + '…' + d.txid.slice(-4) : '—';
+      tr.innerHTML = `
+        <td class="px-5 py-3 text-muted text-xs">${fmtDate(d.created_at)}</td>
+        <td class="px-5 py-3"><div>${escapeHtml(d.name || '')}</div><div class="text-[11px] text-muted">${escapeHtml(d.email || '')}</div></td>
+        <td class="px-5 py-3 text-right font-mono text-yellow-400">${fmt6(d.amount_usdt)}</td>
+        <td class="px-5 py-3 font-mono text-xs" title="${escapeHtml(d.txid || '')}">${txShort}</td>
+        <td class="px-5 py-3">${statusPill(d.status)}</td>
+        <td class="px-5 py-3 pr-5 text-right">
+          <button data-id="${d.id}" class="btn-dep-view text-xs px-2.5 py-1.5 bg-accent2/10 text-accent2 border border-accent2/30 rounded hover:bg-accent2/20 transition">Review</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.btn-dep-view').forEach(b => {
+      b.addEventListener('click', () => openDepositReview(b.dataset.id));
+    });
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+let currentDepositId = null;
+async function openDepositReview(id) {
+  try {
+    const d = await API.req('/api/admin/deposits/' + id);
+    currentDepositId = id;
+    const dep = d.deposit;
+    $('dep-modal-status').innerHTML = statusPill(dep.status);
+    setText('dep-modal-name', dep.name || '—');
+    setText('dep-modal-email', dep.email || '—');
+    setText('dep-modal-amount', fmt6(dep.amount_usdt) + ' USDT');
+    setText('dep-modal-usd', fmt(Number(dep.amount_usdt) * (cashflowState.depositInfo?.usdt_price || 1)));
+    setText('dep-modal-txid', dep.txid || '—');
+    setText('dep-modal-address', dep.deposit_address || '—');
+    $('dep-modal-screenshot').src = dep.screenshot_data || '';
+    $('form-deposit-action').reset();
+    const isPending = dep.status === 'pending';
+    $('btn-dep-modal-approve').disabled = !isPending;
+    $('btn-dep-modal-reject').disabled = !isPending;
+    $('btn-dep-modal-approve').className = isPending
+      ? 'flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm'
+      : 'flex-1 bg-line text-muted font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed';
+    $('btn-dep-modal-reject').className = isPending
+      ? 'flex-1 bg-danger hover:bg-danger/90 text-white font-semibold py-2.5 rounded-lg text-sm'
+      : 'flex-1 bg-line text-muted font-semibold py-2.5 rounded-lg text-sm cursor-not-allowed';
+    $('modal-deposit').classList.remove('hidden');
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 document.addEventListener('click', async (e) => {
   if (!e.target) return;
-  if (e.target.id === 'btn-demo-start') {
-    if (!confirm('Start demo mode for ALL users? Auto-trading $10–$20 every ~10s will begin.')) return;
+  if (e.target.id === 'btn-refresh-dep') loadAdminDeposits();
+  if (e.target.id === 'btn-dep-modal-cancel') $('modal-deposit').classList.add('hidden');
+  if (e.target.id === 'btn-dep-modal-approve') {
+    if (!currentDepositId) return;
     try {
-      await API.req('/api/admin/demo-mode/start', { method: 'POST' });
-      toast('Demo mode started — auto-trading live', 'success');
-      loadDemoState();
-      loadAdmin();
+      const r = await API.req(`/api/admin/deposits/${currentDepositId}/approve`, { method: 'POST' });
+      $('modal-deposit').classList.add('hidden');
+      toast(`Approved · credited $${fmt(r.credited_usd)}`, 'success');
+      loadAdminDeposits(); loadAdmin();
     } catch (err) { toast(err.message, 'error'); }
   }
-  if (e.target.id === 'btn-demo-stop') {
-    if (!confirm('Stop demo mode? Every cent of demo P&L will be reverted across all users. Real admin credits and referral bonuses stay.')) return;
+  if (e.target.id === 'btn-dep-modal-reject') {
+    if (!currentDepositId) return;
+    const reason = $('form-deposit-action').querySelector('input[name="reason"]').value || undefined;
     try {
-      const r = await API.req('/api/admin/demo-mode/stop', { method: 'POST' });
-      toast(`Demo stopped · reverted ${r.reverted.trade_count} trades ($${fmt(r.reverted.total_pnl)}) across ${r.reverted.users_affected} users`, 'success');
-      loadDemoState();
-      loadAdmin();
+      await API.req(`/api/admin/deposits/${currentDepositId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      $('modal-deposit').classList.add('hidden');
+      toast('Deposit rejected', 'success');
+      loadAdminDeposits();
     } catch (err) { toast(err.message, 'error'); }
   }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target?.id === 'dep-filter') loadAdminDeposits();
 });
 
 // ---------- Admin tabs ----------
@@ -1017,11 +1288,14 @@ function switchAdminTab(tab) {
   });
   $('admin-tab-users').classList.toggle('hidden', tab !== 'users');
   $('admin-tab-withdrawals').classList.toggle('hidden', tab !== 'withdrawals');
+  const depPane = $('admin-tab-deposits');
+  if (depPane) depPane.classList.toggle('hidden', tab !== 'deposits');
   const bkPane = $('admin-tab-backup');
   if (bkPane) bkPane.classList.toggle('hidden', tab !== 'backup');
   const kycPane = $('admin-tab-kyc');
   if (kycPane) kycPane.classList.toggle('hidden', tab !== 'kyc');
   if (tab === 'withdrawals') loadWithdrawals();
+  if (tab === 'deposits') loadAdminDeposits();
   if (tab === 'backup') loadBackups();
   if (tab === 'kyc') loadAdminKyc();
 }
@@ -1030,23 +1304,21 @@ document.querySelectorAll('.admin-tab').forEach(b => {
   b.addEventListener('click', () => switchAdminTab(b.dataset.adminTab));
 });
 
-// ---------- Admin · Withdrawals ----------
+// ---------- Admin · External Withdrawals ----------
 async function loadWithdrawals() {
   try {
-    const filter = ($('wd-filter') && $('wd-filter').value) || '';
-    const url = filter ? `/api/admin/withdrawals?status=${encodeURIComponent(filter)}` : '/api/admin/withdrawals';
+    const filter = $('wd-filter')?.value || '';
+    const url = filter ? `/api/admin/withdrawals-ext?status=${encodeURIComponent(filter)}` : '/api/admin/withdrawals-ext';
     const data = await API.req(url);
-    $('wd-stat-pending').textContent = data.counts.pending || 0;
-    $('wd-stat-success').textContent = data.counts.success || 0;
-    $('wd-stat-rejected').textContent = data.counts.rejected || 0;
-    $('wd-stat-total').textContent = data.counts.total || 0;
+    setText('wd-stat-pending', data.counts.pending || 0);
+    setText('wd-stat-success', data.counts.approved || 0);
+    setText('wd-stat-rejected', data.counts.rejected || 0);
+    setText('wd-stat-total', data.counts.total || 0);
 
     const badge = $('wd-pending-badge');
-    if (data.counts.pending > 0) {
-      badge.classList.remove('hidden');
-      badge.textContent = data.counts.pending;
-    } else {
-      badge.classList.add('hidden');
+    if (badge) {
+      if (data.counts.pending > 0) { badge.classList.remove('hidden'); badge.textContent = data.counts.pending; }
+      else badge.classList.add('hidden');
     }
 
     const body = $('tbody-withdrawals');
@@ -1056,55 +1328,36 @@ async function loadWithdrawals() {
       return;
     }
     data.withdrawals.forEach(w => {
-      const amt = Math.abs(Number(w.amount));
-      const wallet = w.wallet_address || '';
+      const wallet = w.to_address || '';
       const wShort = wallet ? wallet.slice(0, 8) + '…' + wallet.slice(-6) : '—';
-      const txid = w.txid || '';
-      const txShort = txid ? txid.slice(0, 8) + '…' + txid.slice(-4) : '—';
-      const statusBadge = wdStatusBadge(w.status);
-
-      const walletCell = wallet
-        ? `<div class="flex items-center gap-1.5">
-            <code class="text-[11px] text-gray-300" title="${escapeHtml(wallet)}">${wShort}</code>
-            <button data-copy="${escapeHtml(wallet)}" class="btn-copy-text text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition" title="Copy wallet address">Copy</button>
-          </div>`
-        : '<span class="text-muted">—</span>';
-
-      const txidCell = txid
-        ? `<div class="flex items-center gap-1.5">
-            <code class="text-[11px] text-muted" title="${escapeHtml(txid)}">${txShort}</code>
-            <button data-copy="${escapeHtml(txid)}" class="btn-copy-text text-[10px] px-1.5 py-0.5 bg-bg border border-line rounded hover:border-accent transition" title="Copy TXID">Copy</button>
-          </div>`
-        : '<span class="text-muted">—</span>';
-
       let actions = '';
       if (w.status === 'pending') {
         actions = `
-          <button data-id="${w.id}" data-amount="${amt}" data-label="${escapeHtml(w.email)}" data-wallet="${escapeHtml(wallet)}" class="btn-wd-approve text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition mr-1">Mark Success</button>
-          <button data-id="${w.id}" data-amount="${amt}" data-label="${escapeHtml(w.email)}" class="btn-wd-reject text-xs px-2.5 py-1.5 bg-danger/10 text-danger border border-danger/30 rounded hover:bg-danger/20 transition">Reject</button>
+          <button data-id="${w.id}" data-net="${w.net_usdt}" data-fee="${w.fee_usd}" data-label="${escapeHtml(w.email)}" data-wallet="${escapeHtml(wallet)}" class="btn-wd-approve text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition mr-1">Mark Sent</button>
+          <button data-id="${w.id}" data-net="${w.net_usdt}" data-label="${escapeHtml(w.email)}" class="btn-wd-reject text-xs px-2.5 py-1.5 bg-danger/10 text-danger border border-danger/30 rounded hover:bg-danger/20 transition">Reject &amp; Refund</button>
         `;
       } else {
-        actions = `<span class="text-xs text-muted">${w.processed_at ? fmtDate(w.processed_at) : '—'}</span>`;
+        actions = `<span class="text-xs text-muted">${w.reviewed_at ? fmtDate(w.reviewed_at) : '—'}</span>`;
       }
       const tr = document.createElement('tr');
       tr.className = 'border-t border-line hover:bg-bg/40';
       tr.innerHTML = `
         <td class="px-5 py-3 text-muted text-xs">${fmtDate(w.created_at)}</td>
         <td class="px-5 py-3"><div>${escapeHtml(w.name || '')}</div><div class="text-[11px] text-muted">${escapeHtml(w.email || '')}</div></td>
-        <td class="px-5 py-3 text-right font-mono text-orange-400">$${fmt(amt)}</td>
-        <td class="px-5 py-3">${walletCell}</td>
-        <td class="px-5 py-3">${statusBadge}</td>
-        <td class="px-5 py-3">${txidCell}</td>
+        <td class="px-5 py-3 text-right font-mono text-accent">${fmt6(w.net_usdt)}<div class="text-[10px] text-muted">gross $${fmt(w.gross_usd)}</div></td>
+        <td class="px-5 py-3"><code class="text-[11px] text-gray-300" title="${escapeHtml(wallet)}">${wShort}</code></td>
+        <td class="px-5 py-3 text-orange-400">${(w.fee_pct * 100).toFixed(0)}% · $${fmt(w.fee_usd)}</td>
+        <td class="px-5 py-3">${statusPill(w.status)}</td>
         <td class="px-5 py-3 pr-5 text-right whitespace-nowrap">${actions}</td>
       `;
       body.appendChild(tr);
     });
 
     body.querySelectorAll('.btn-wd-approve').forEach(b => {
-      b.addEventListener('click', () => openApproveModal(b.dataset.id, b.dataset.label, b.dataset.amount, b.dataset.wallet));
+      b.addEventListener('click', () => openApproveModal(b.dataset.id, b.dataset.label, b.dataset.net, b.dataset.wallet, b.dataset.fee));
     });
     body.querySelectorAll('.btn-wd-reject').forEach(b => {
-      b.addEventListener('click', () => openRejectModal(b.dataset.id, b.dataset.label, b.dataset.amount));
+      b.addEventListener('click', () => openRejectModal(b.dataset.id, b.dataset.label, b.dataset.net));
     });
   } catch (err) {
     toast(err.message, 'error');
@@ -1131,11 +1384,12 @@ if ($('wd-filter')) $('wd-filter').addEventListener('change', loadWithdrawals);
 // Approve modal
 let currentApproveId = null;
 let currentApproveWallet = '';
-function openApproveModal(id, label, amount, wallet) {
+function openApproveModal(id, label, netUsdt, wallet, feeUsd) {
   currentApproveId = id;
   currentApproveWallet = wallet || '';
   $('approve-wd-label').textContent = label;
-  $('approve-wd-amount').textContent = fmt(amount);
+  $('approve-wd-amount').textContent = fmt6(Number(netUsdt)) + ' USDT';
+  if ($('approve-wd-fee')) $('approve-wd-fee').textContent = '$' + fmt(Number(feeUsd) || 0);
   $('approve-wd-wallet').textContent = currentApproveWallet || '—';
   $('modal-approve-wd').classList.remove('hidden');
   $('form-approve-wd').reset();
@@ -1157,7 +1411,7 @@ $('form-approve-wd').addEventListener('submit', async (e) => {
   if (!currentApproveId) return;
   const fd = new FormData(e.target);
   try {
-    await API.req(`/api/admin/withdrawals/${currentApproveId}/approve`, {
+    await API.req(`/api/admin/withdrawals-ext/${currentApproveId}/approve`, {
       method: 'POST',
       body: JSON.stringify({ txid: fd.get('txid') || undefined }),
     });
@@ -1182,7 +1436,7 @@ $('form-reject-wd').addEventListener('submit', async (e) => {
   if (!currentRejectId) return;
   const fd = new FormData(e.target);
   try {
-    await API.req(`/api/admin/withdrawals/${currentRejectId}/reject`, {
+    await API.req(`/api/admin/withdrawals-ext/${currentRejectId}/reject`, {
       method: 'POST',
       body: JSON.stringify({ reason: fd.get('reason') || undefined }),
     });

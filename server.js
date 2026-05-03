@@ -16,16 +16,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod-' + crypto.rando
 const PROFIT_DAY_PCT = 0.007;       // 0.7% of capital per day (production)
 const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user (production)
 
-// === DEMO MODE (admin-toggled at runtime) ===
-// Admin can start/stop from the dashboard. State lives in system_state table
-// so it survives restarts, and every demo trade is tagged is_demo=1 in the
-// transactions table — that lets stopDemoMode() cleanly revert all demo
-// P&L without touching real admin credits or referral bonuses.
-const DEMO_TICK_MS = 10_000;         // a trade every ~10s per active user
-const DEMO_MIN_PNL = 10;             // $ minimum per trade
-const DEMO_MAX_PNL = 20;             // $ maximum per trade (visible movement, not absurd)
-const DEMO_WIN_RATE = 0.85;          // 85 % of trades are profitable
-// ============================================
 
 // Referral program
 const MIN_DEPOSIT_AMOUNT = 50;             // any "deposit" must be ≥ $50 (also the joining minimum)
@@ -130,16 +120,53 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'completed',
     processed_at TEXT,
     txid TEXT,
-    is_demo INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
-  CREATE TABLE IF NOT EXISTS system_state (
-    id INTEGER PRIMARY KEY,
-    demo_active INTEGER NOT NULL DEFAULT 0,
-    demo_started_at TEXT
+  CREATE TABLE IF NOT EXISTS config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
   );
-  INSERT OR IGNORE INTO system_state (id, demo_active) VALUES (1, 0);
+  INSERT OR IGNORE INTO config (key, value) VALUES
+    ('deposit_address',  'TGW6jgbjv2o1H1HgJSX9rXVKFYyFBbCWSu'),
+    ('deposit_network',  'TRC-20'),
+    ('withdraw_fee_early_pct',  '0.25'),
+    ('withdraw_fee_normal_pct', '0.20'),
+    ('early_window_days',       '60');
+  CREATE TABLE IF NOT EXISTS deposit_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount_usdt REAL NOT NULL,
+    deposit_address TEXT NOT NULL,
+    txid TEXT,
+    screenshot_data TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reject_reason TEXT,
+    reviewed_at TEXT,
+    reviewer_email TEXT,
+    credited_usd REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+  CREATE TABLE IF NOT EXISTS withdraw_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    gross_usd REAL NOT NULL,
+    fee_pct REAL NOT NULL,
+    fee_usd REAL NOT NULL,
+    net_usd REAL NOT NULL,
+    net_usdt REAL NOT NULL,
+    usdt_price REAL NOT NULL,
+    to_address TEXT NOT NULL,
+    network TEXT NOT NULL DEFAULT 'TRC-20',
+    status TEXT NOT NULL DEFAULT 'pending',
+    txid TEXT,
+    reject_reason TEXT,
+    reviewed_at TEXT,
+    reviewer_email TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 // Migration safety: add new columns to pre-existing DBs
 try { db.exec('ALTER TABLE users ADD COLUMN bot_active INTEGER NOT NULL DEFAULT 1'); } catch {}
@@ -169,9 +196,32 @@ try { db.exec('ALTER TABLE transactions ADD COLUMN processed_at TEXT'); } catch 
 try { db.exec('ALTER TABLE transactions ADD COLUMN txid TEXT'); } catch {}
 try { db.exec('ALTER TABLE transactions ADD COLUMN usdt_amount REAL'); } catch {}
 try { db.exec('ALTER TABLE transactions ADD COLUMN counterparty_id INTEGER'); } catch {}
-try { db.exec('ALTER TABLE transactions ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0'); } catch {}
-try { db.exec('CREATE TABLE IF NOT EXISTS system_state (id INTEGER PRIMARY KEY, demo_active INTEGER NOT NULL DEFAULT 0, demo_started_at TEXT)'); } catch {}
-try { db.exec('INSERT OR IGNORE INTO system_state (id, demo_active) VALUES (1, 0)'); } catch {}
+// Config + new request tables (migration-safe for existing DBs)
+try { db.exec(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`); } catch {}
+try {
+  db.exec(`INSERT OR IGNORE INTO config (key, value) VALUES
+    ('deposit_address',  'TGW6jgbjv2o1H1HgJSX9rXVKFYyFBbCWSu'),
+    ('deposit_network',  'TRC-20'),
+    ('withdraw_fee_early_pct',  '0.25'),
+    ('withdraw_fee_normal_pct', '0.20'),
+    ('early_window_days',       '60')`);
+} catch {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS deposit_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, amount_usdt REAL NOT NULL,
+  deposit_address TEXT NOT NULL, txid TEXT, screenshot_data TEXT,
+  status TEXT NOT NULL DEFAULT 'pending', reject_reason TEXT,
+  reviewed_at TEXT, reviewer_email TEXT, credited_usd REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`); } catch {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS withdraw_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+  gross_usd REAL NOT NULL, fee_pct REAL NOT NULL, fee_usd REAL NOT NULL,
+  net_usd REAL NOT NULL, net_usdt REAL NOT NULL, usdt_price REAL NOT NULL,
+  to_address TEXT NOT NULL, network TEXT NOT NULL DEFAULT 'TRC-20',
+  status TEXT NOT NULL DEFAULT 'pending', txid TEXT, reject_reason TEXT,
+  reviewed_at TEXT, reviewer_email TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`); } catch {}
 
 function genReferralCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -391,6 +441,123 @@ app.get('/api/me/transactions', authRequired, (req, res) => {
     ORDER BY id DESC LIMIT 200
   `).all(req.user.id);
   res.json({ transactions: rows });
+});
+
+// ---------- Deposits (user submits proof, admin approves) ----------
+app.get('/api/deposit-info', authRequired, (_req, res) => {
+  res.json({
+    address: getConfig('deposit_address'),
+    network: getConfig('deposit_network', 'TRC-20'),
+    min_usdt: MIN_DEPOSIT_AMOUNT,                       // currently $50
+    usdt_price: getUsdtPrice().price,
+  });
+});
+
+function validProofImage(s) {
+  if (typeof s !== 'string') return false;
+  if (!s.startsWith('data:image/')) return false;
+  if (s.length > KYC_MAX_IMAGE_BYTES) return false;
+  return true;
+}
+
+app.post('/api/me/deposits', authRequired, (req, res) => {
+  const amountUsdt = Number(req.body?.amount_usdt);
+  const txid = req.body?.txid ? String(req.body.txid).trim().slice(0, 200) : null;
+  const screenshot = req.body?.screenshot;
+  if (!Number.isFinite(amountUsdt) || amountUsdt < MIN_DEPOSIT_AMOUNT) {
+    return res.status(400).json({ error: `minimum deposit is ${MIN_DEPOSIT_AMOUNT} USDT` });
+  }
+  if (!validProofImage(screenshot)) {
+    return res.status(400).json({ error: 'screenshot required (PNG/JPG, ≤ 600 KB)' });
+  }
+  const addr = getConfig('deposit_address');
+  const r = db.prepare(`
+    INSERT INTO deposit_requests (user_id, amount_usdt, deposit_address, txid, screenshot_data)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(req.user.id, +amountUsdt.toFixed(6), addr, txid, screenshot);
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+app.get('/api/me/deposits', authRequired, (req, res) => {
+  // Don't return base64 screenshot in the list — too heavy. Just summary fields.
+  const rows = db.prepare(`
+    SELECT id, amount_usdt, deposit_address, txid, status, reject_reason,
+           reviewed_at, credited_usd, created_at
+    FROM deposit_requests WHERE user_id = ?
+    ORDER BY id DESC LIMIT 100
+  `).all(req.user.id);
+  res.json({ deposits: rows });
+});
+
+// ---------- External withdrawals (Trading USD → user's external TRC-20) ----------
+app.get('/api/me/withdraw-info', authRequired, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  const fee = calcWithdrawFee(user);
+  res.json({
+    ...fee,
+    network: 'TRC-20',
+    eta_hours: 24,
+    kyc_required: true,
+    kyc_status: user.kyc_status,
+    usdt_price: getUsdtPrice().price,
+    available_usd: Number(user.balance) || 0,
+  });
+});
+
+app.post('/api/me/withdrawals', authRequired, (req, res) => {
+  const grossUsd = Number(req.body?.amount_usd);
+  const toAddr = String(req.body?.to_address || '').trim();
+  if (!Number.isFinite(grossUsd) || grossUsd < 10) {
+    return res.status(400).json({ error: 'minimum withdrawal is $10' });
+  }
+  if (!toAddr || toAddr.length < 25 || toAddr.length > 100) {
+    return res.status(400).json({ error: 'invalid TRC-20 address' });
+  }
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  if (user.kyc_status !== 'approved') {
+    return res.status(403).json({ error: 'complete KYC verification before withdrawing' });
+  }
+  if (Number(user.balance) < grossUsd - 1e-9) {
+    return res.status(400).json({ error: 'insufficient trading balance' });
+  }
+  const { fee_pct } = calcWithdrawFee(user);
+  const feeUsd = +(grossUsd * fee_pct).toFixed(2);
+  const netUsd = +(grossUsd - feeUsd).toFixed(2);
+  if (netUsd <= 0) return res.status(400).json({ error: 'amount too small after fee' });
+  const price  = usdtPriceCache.price;
+  const netUsdt = +(netUsd / price).toFixed(6);
+  const grossR  = +grossUsd.toFixed(2);
+
+  withTransaction(() => {
+    db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(grossR, user.id);
+    db.prepare(`
+      INSERT INTO withdraw_requests
+        (user_id, gross_usd, fee_pct, fee_usd, net_usd, net_usdt, usdt_price,
+         to_address, network, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'TRC-20', 'pending')
+    `).run(user.id, grossR, fee_pct, feeUsd, netUsd, netUsdt, price, toAddr);
+  });
+
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  res.json({
+    user: publicUser(updated),
+    request: {
+      gross_usd: grossR, fee_pct, fee_usd: feeUsd, net_usd: netUsd,
+      net_usdt: netUsdt, usdt_price: price, to_address: toAddr, eta_hours: 24,
+    },
+  });
+});
+
+app.get('/api/me/withdrawals', authRequired, (req, res) => {
+  const rows = db.prepare(`
+    SELECT id, gross_usd, fee_pct, fee_usd, net_usd, net_usdt, usdt_price,
+           to_address, network, status, txid, reject_reason, reviewed_at, created_at
+    FROM withdraw_requests WHERE user_id = ?
+    ORDER BY id DESC LIMIT 100
+  `).all(req.user.id);
+  res.json({ withdrawals: rows });
 });
 
 // ---------- Profile ----------
@@ -689,31 +856,165 @@ app.get('/api/admin/stats', authRequired, adminRequired, (req, res) => {
   });
 });
 
-// ---------- Admin · Demo Mode ----------
-app.get('/api/admin/demo-mode', authRequired, adminRequired, (_req, res) => {
-  res.json(getDemoState());
-});
-
-app.post('/api/admin/demo-mode/start', authRequired, adminRequired, (_req, res) => {
-  if (isDemoActive()) return res.status(400).json({ error: 'demo mode is already active' });
-  startDemoMode();
-  res.json(getDemoState());
-});
-
-app.post('/api/admin/demo-mode/stop', authRequired, adminRequired, (_req, res) => {
-  if (!isDemoActive()) return res.status(400).json({ error: 'demo mode is not active' });
-  // Snapshot stats first so we can report them in the response
-  const before = getDemoState();
-  stopDemoMode();
+// ---------- Admin · Deposit address config ----------
+app.get('/api/admin/config/deposit-address', authRequired, adminRequired, (_req, res) => {
   res.json({
-    ok: true,
-    reverted: {
-      trade_count: before.trade_count,
-      total_pnl: before.total_pnl,
-      users_affected: before.users_affected,
-    },
-    state: getDemoState(),
+    address: getConfig('deposit_address'),
+    network: getConfig('deposit_network', 'TRC-20'),
   });
+});
+
+app.post('/api/admin/config/deposit-address', authRequired, adminRequired, (req, res) => {
+  const address = String(req.body?.address || '').trim();
+  const network = String(req.body?.network || 'TRC-20').trim();
+  if (!address || address.length < 20 || address.length > 100) {
+    return res.status(400).json({ error: 'invalid address' });
+  }
+  setConfig('deposit_address', address);
+  setConfig('deposit_network', network);
+  res.json({ ok: true, address, network });
+});
+
+// ---------- Admin · Deposit requests ----------
+app.get('/api/admin/deposits', authRequired, adminRequired, (req, res) => {
+  const status = req.query.status || null;
+  const where = status ? 'AND d.status = ?' : '';
+  const args = status ? [status] : [];
+  const rows = db.prepare(`
+    SELECT d.id, d.user_id, d.amount_usdt, d.deposit_address, d.txid, d.status,
+           d.reject_reason, d.reviewed_at, d.reviewer_email, d.credited_usd, d.created_at,
+           u.email, u.name
+    FROM deposit_requests d JOIN users u ON u.id = d.user_id
+    WHERE 1=1 ${where}
+    ORDER BY
+      CASE d.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+      d.id DESC
+    LIMIT 300
+  `).all(...args);
+  const counts = db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+      COUNT(*) AS total
+    FROM deposit_requests
+  `).get();
+  res.json({ deposits: rows, counts });
+});
+
+app.get('/api/admin/deposits/:id', authRequired, adminRequired, (req, res) => {
+  const row = db.prepare(`
+    SELECT d.*, u.email, u.name, u.balance, u.referred_by, u.qualifying_deposit_at
+    FROM deposit_requests d JOIN users u ON u.id = d.user_id
+    WHERE d.id = ?
+  `).get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  res.json({ deposit: row });
+});
+
+app.post('/api/admin/deposits/:id/approve', authRequired, adminRequired, (req, res) => {
+  const dep = db.prepare('SELECT * FROM deposit_requests WHERE id = ?').get(req.params.id);
+  if (!dep) return res.status(404).json({ error: 'not found' });
+  if (dep.status !== 'pending') return res.status(400).json({ error: `already ${dep.status}` });
+
+  const price = usdtPriceCache.price;
+  const usd = +(Number(dep.amount_usdt) * price).toFixed(2);
+  let bonusEvents = null;
+  withTransaction(() => {
+    db.prepare('UPDATE users SET balance = balance + ?, total_deposits = total_deposits + ? WHERE id = ?')
+      .run(usd, usd, dep.user_id);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, note)
+      VALUES (?, 'deposit', ?, ?)
+    `).run(dep.user_id, usd, `Approved deposit · ${Number(dep.amount_usdt).toFixed(6)} USDT @ $${price.toFixed(4)}` + (dep.txid ? ` · TXID ${String(dep.txid).slice(0, 12)}…` : ''));
+    db.prepare(`
+      UPDATE deposit_requests
+      SET status = 'approved', reviewed_at = datetime('now'), reviewer_email = ?, credited_usd = ?
+      WHERE id = ?
+    `).run(req.user.email, usd, dep.id);
+    if (usd >= MIN_QUALIFYING_DEPOSIT) {
+      bonusEvents = applyReferralBonuses(dep.user_id, usd);
+    }
+  });
+  res.json({ ok: true, credited_usd: usd, referral_bonuses: bonusEvents });
+});
+
+app.post('/api/admin/deposits/:id/reject', authRequired, adminRequired, (req, res) => {
+  const dep = db.prepare('SELECT * FROM deposit_requests WHERE id = ?').get(req.params.id);
+  if (!dep) return res.status(404).json({ error: 'not found' });
+  if (dep.status !== 'pending') return res.status(400).json({ error: `already ${dep.status}` });
+  const reason = req.body?.reason ? String(req.body.reason).trim().slice(0, 200) : 'Could not verify payment';
+  db.prepare(`
+    UPDATE deposit_requests
+    SET status = 'rejected', reviewed_at = datetime('now'), reviewer_email = ?, reject_reason = ?
+    WHERE id = ?
+  `).run(req.user.email, reason, dep.id);
+  res.json({ ok: true });
+});
+
+// ---------- Admin · External withdraw requests ----------
+app.get('/api/admin/withdrawals-ext', authRequired, adminRequired, (req, res) => {
+  const status = req.query.status || null;
+  const where = status ? 'AND w.status = ?' : '';
+  const args = status ? [status] : [];
+  const rows = db.prepare(`
+    SELECT w.*, u.email, u.name, u.balance
+    FROM withdraw_requests w JOIN users u ON u.id = w.user_id
+    WHERE 1=1 ${where}
+    ORDER BY
+      CASE w.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+      w.id DESC
+    LIMIT 300
+  `).all(...args);
+  const counts = db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+      COUNT(*) AS total
+    FROM withdraw_requests
+  `).get();
+  res.json({ withdrawals: rows, counts });
+});
+
+app.post('/api/admin/withdrawals-ext/:id/approve', authRequired, adminRequired, (req, res) => {
+  const w = db.prepare('SELECT * FROM withdraw_requests WHERE id = ?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'not found' });
+  if (w.status !== 'pending') return res.status(400).json({ error: `already ${w.status}` });
+  const txid = req.body?.txid ? String(req.body.txid).trim().slice(0, 200) : null;
+  withTransaction(() => {
+    db.prepare(`
+      UPDATE withdraw_requests SET status = 'approved', reviewed_at = datetime('now'),
+        reviewer_email = ?, txid = ? WHERE id = ?
+    `).run(req.user.email, txid, w.id);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, usdt_amount, note, status, txid)
+      VALUES (?, 'usdt_withdraw', ?, ?, ?, 'success', ?)
+    `).run(w.user_id, -w.gross_usd, -w.net_usdt,
+      `External withdraw · ${w.net_usdt.toFixed(6)} USDT to ${w.to_address} (${(w.fee_pct * 100).toFixed(0)}% fee)`,
+      txid);
+  });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/withdrawals-ext/:id/reject', authRequired, adminRequired, (req, res) => {
+  const w = db.prepare('SELECT * FROM withdraw_requests WHERE id = ?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'not found' });
+  if (w.status !== 'pending') return res.status(400).json({ error: `already ${w.status}` });
+  const reason = req.body?.reason ? String(req.body.reason).trim().slice(0, 200) : 'Withdrawal rejected';
+  withTransaction(() => {
+    // Refund the gross amount back to trading balance
+    db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(w.gross_usd, w.user_id);
+    db.prepare(`
+      UPDATE withdraw_requests SET status = 'rejected', reviewed_at = datetime('now'),
+        reviewer_email = ?, reject_reason = ? WHERE id = ?
+    `).run(req.user.email, reason, w.id);
+    db.prepare(`
+      INSERT INTO transactions (user_id, type, amount, note)
+      VALUES (?, 'admin_credit', ?, ?)
+    `).run(w.user_id, w.gross_usd, `Refund · withdrawal rejected (${reason})`);
+  });
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/users', authRequired, adminRequired, (req, res) => {
@@ -967,6 +1268,30 @@ app.get('/api/usdt/price', (_req, res) => {
 // ---------- USDT · Buy / Sell / Send / Withdraw ----------
 function round2(n) { return +Number(n).toFixed(2); }
 function round6(n) { return +Number(n).toFixed(6); }
+
+// ---------- Config (admin-mutable runtime settings) ----------
+function getConfig(key, fallback = null) {
+  const r = db.prepare('SELECT value FROM config WHERE key = ?').get(key);
+  return r ? r.value : fallback;
+}
+function setConfig(key, value) {
+  db.prepare(`
+    INSERT INTO config (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, String(value));
+}
+
+// Account-age based fee — within `early_window_days` it's `early_pct`, else `normal_pct`.
+function calcWithdrawFee(user) {
+  const earlyDays = Number(getConfig('early_window_days', '60')) || 60;
+  const earlyPct  = Number(getConfig('withdraw_fee_early_pct',  '0.25')) || 0.25;
+  const normalPct = Number(getConfig('withdraw_fee_normal_pct', '0.20')) || 0.20;
+  // Compute days since account creation in UTC.
+  const createdMs = Date.parse((user.created_at || '').replace(' ', 'T') + 'Z');
+  const ageDays   = Number.isFinite(createdMs) ? (Date.now() - createdMs) / 86400000 : 9999;
+  const isEarly   = ageDays < earlyDays;
+  return { fee_pct: isEarly ? earlyPct : normalPct, is_early: isEarly, age_days: +ageDays.toFixed(1), early_window_days: earlyDays };
+}
 
 // node:sqlite DatabaseSync has no transaction() helper — emulate one.
 function withTransaction(fn) {
@@ -1262,21 +1587,6 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   const tradeCount = (user.daily_pnl_date === today) ? Number(user.daily_trade_count || 0) : 0;
   const effectiveStart = Math.max(1, Number(user.balance) - dailyPnl);
 
-  if (isDemoActive()) {
-    return res.json({
-      mode: 'demo',
-      is_profit_day: true,
-      target_pct: 0,
-      target_pnl: 0,
-      daily_pnl: dailyPnl,
-      day_start_balance: effectiveStart,
-      trades_per_day: -1,
-      daily_trade_count: tradeCount,
-      progress_pct: 0,
-      demo: { min: DEMO_MIN_PNL, max: DEMO_MAX_PNL, win_rate: DEMO_WIN_RATE, tick_ms: DEMO_TICK_MS },
-    });
-  }
-
   const targetPnl = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
   const [slot1, slot2] = userSlotHours(user.id);
   res.json({
@@ -1293,109 +1603,7 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   });
 });
 
-// --- DEMO MODE state helpers + start/stop ---
-function isDemoActive() {
-  const r = db.prepare('SELECT demo_active FROM system_state WHERE id = 1').get();
-  return !!(r && r.demo_active);
-}
-function getDemoState() {
-  const r = db.prepare('SELECT demo_active, demo_started_at FROM system_state WHERE id = 1').get() || {};
-  const stats = db.prepare(`
-    SELECT
-      COUNT(*)                    AS trade_count,
-      COALESCE(SUM(amount), 0)    AS total_pnl,
-      COUNT(DISTINCT user_id)     AS users_affected
-    FROM transactions WHERE is_demo = 1 AND type = 'bot_trade'
-  `).get();
-  return {
-    active: !!r.demo_active,
-    started_at: r.demo_started_at || null,
-    trade_count: Number(stats.trade_count) || 0,
-    total_pnl: +Number(stats.total_pnl).toFixed(2),
-    users_affected: Number(stats.users_affected) || 0,
-    params: { min: DEMO_MIN_PNL, max: DEMO_MAX_PNL, win_rate: DEMO_WIN_RATE, tick_ms: DEMO_TICK_MS },
-  };
-}
-function startDemoMode() {
-  db.prepare("UPDATE system_state SET demo_active = 1, demo_started_at = datetime('now') WHERE id = 1").run();
-}
-function stopDemoMode() {
-  // Rebuild every affected user's state from scratch — subtract demo trade
-  // sum from balance, recompute today's daily_pnl/trade_count from REMAINING
-  // (non-demo) bot trades, then delete the demo trade rows. Real admin
-  // credits and referral bonuses (different types) are untouched.
-  withTransaction(() => {
-    // Subtract demo trade pnl, then ROUND to 2 decimals to absorb floating
-    // point dust (sum-of-floats can leave ε of error otherwise).
-    db.prepare(`
-      UPDATE users SET balance = ROUND(balance - COALESCE((
-        SELECT SUM(amount) FROM transactions
-        WHERE user_id = users.id AND is_demo = 1 AND type = 'bot_trade'
-      ), 0), 2)
-    `).run();
-    db.prepare(`
-      UPDATE users SET
-        daily_pnl = ROUND(COALESCE((
-          SELECT SUM(amount) FROM transactions
-          WHERE user_id = users.id AND type = 'bot_trade' AND is_demo = 0
-            AND date(created_at) = date('now')
-        ), 0), 2),
-        daily_trade_count = COALESCE((
-          SELECT COUNT(*) FROM transactions
-          WHERE user_id = users.id AND type = 'bot_trade' AND is_demo = 0
-            AND date(created_at) = date('now')
-        ), 0),
-        daily_pnl_date = date('now')
-    `).run();
-    db.prepare("DELETE FROM transactions WHERE is_demo = 1 AND type = 'bot_trade'").run();
-    db.prepare('UPDATE system_state SET demo_active = 0, demo_started_at = NULL WHERE id = 1').run();
-  });
-}
-
-// --- DEMO MODE: simple random-walk bot for visible live trading ---
-function demoTick() {
-  const today = new Date().toISOString().slice(0, 10);
-
-  const activeUsers = db.prepare(`
-    SELECT id, balance, daily_pnl, daily_pnl_date
-    FROM users WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
-  `).all();
-  if (activeUsers.length === 0) return;
-
-  const resetDay = db.prepare(`UPDATE users SET daily_pnl = 0, daily_trade_count = 0, daily_pnl_date = ? WHERE id = ?`);
-  const updateTrade = db.prepare(`
-    UPDATE users
-    SET balance = balance + ?, daily_pnl = daily_pnl + ?, daily_trade_count = daily_trade_count + 1, daily_pnl_date = ?
-    WHERE id = ?
-  `);
-  // Demo trades are tagged is_demo=1 so stopDemoMode can wipe them cleanly.
-  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note, is_demo) VALUES (?, 'bot_trade', ?, ?, 1)`);
-
-  for (const u of activeUsers) {
-    if (u.daily_pnl_date !== today) resetDay.run(today, u.id);
-
-    const win = Math.random() < DEMO_WIN_RATE;
-    const mag = +(DEMO_MIN_PNL + Math.random() * (DEMO_MAX_PNL - DEMO_MIN_PNL)).toFixed(2);
-    let pnl = win ? mag : -mag;
-
-    // Safety: never push the user below $1.
-    if (pnl < 0 && Math.abs(pnl) > Number(u.balance) - 1) {
-      pnl = -(Number(u.balance) - 1);
-      pnl = +pnl.toFixed(2);
-      if (Math.abs(pnl) < 0.01) continue;
-    }
-
-    const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-    const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
-    const note = `${side} ${symbol} ${pnl >= 0 ? 'TP hit' : 'SL hit'}`;
-
-    updateTrade.run(pnl, pnl, today, u.id);
-    insertTx.run(u.id, pnl, note);
-  }
-}
-
 function botTick() {
-  if (isDemoActive()) return demoTick();
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
@@ -1451,10 +1659,7 @@ function botTick() {
     insertTx.run(u.id, pnl, note);
   }
 }
-// Always tick on the demo cadence (10s). Production logic gates internally
-// on slot hour + 2-trades-per-day cap, so most ticks are no-ops there.
-// Demo logic uses every tick.
-setInterval(botTick, DEMO_TICK_MS);
+setInterval(botTick, BOT_TICK_MS);
 
 // PWA manifest — lets users "install" the site as an app on iOS/Android home screens.
 app.get('/manifest.webmanifest', (_req, res) => {
