@@ -41,6 +41,9 @@ function toast(message, type = 'info') {
 
 // ---------- Helpers ----------
 const $ = (id) => document.getElementById(id);
+// Safe text setter — silently no-ops if the element id isn't in the DOM.
+// (Used everywhere so a stale cached HTML can never abort a render path.)
+const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -200,7 +203,6 @@ async function loadDashboard() {
     loadWithdrawInfo();
     loadMyDeposits();
     loadMyWithdrawals();
-    const setText = (id, val) => { const el = $(id); if (el) el.textContent = val; };
     setText('stat-commission', fmt(Number(u.referral_balance || 0)));
     setText('stat-bonus', fmt(Number(u.bonus_balance || 0)));
     setText('stat-ref-count', refs.referrals.length);
@@ -557,8 +559,8 @@ async function loadWithdrawInfo() {
     const w = await API.req('/api/me/withdraw-info');
     cashflowState.withdrawInfo = w;
     setText('wd-early-days', w.early_window_days);
-    setText('wd-early-pct',  Math.round((w.fee_pct === w.early_pct ? w.early_pct : 0.25) * 100) + '%');
-    setText('wd-normal-pct', Math.round(0.20 * 100) + '%');
+    setText('wd-early-pct',  '25%');
+    setText('wd-normal-pct', '20%');
     setText('wd-available', fmt(w.available_usd));
     setText('wd-rate', (w.usdt_price || 1).toFixed(4));
     const ctx = $('wd-fee-context');
