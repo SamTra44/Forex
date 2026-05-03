@@ -16,15 +16,16 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod-' + crypto.rando
 const PROFIT_DAY_PCT = 0.007;       // 0.7% of capital per day (production)
 const TRADES_PER_DAY = 2;            // exactly 2 trades per day per user (production)
 
-// === TEMPORARY DEMO MODE ===
-// Frequent live-looking trades with $10-$100 random P&L per trade.
-// Flip DEMO_MODE = false to revert to the strict 2-trades-per-day bot.
-const DEMO_MODE = false;
+// === DEMO MODE (admin-toggled at runtime) ===
+// Admin can start/stop from the dashboard. State lives in system_state table
+// so it survives restarts, and every demo trade is tagged is_demo=1 in the
+// transactions table — that lets stopDemoMode() cleanly revert all demo
+// P&L without touching real admin credits or referral bonuses.
 const DEMO_TICK_MS = 10_000;         // a trade every ~10s per active user
 const DEMO_MIN_PNL = 10;             // $ minimum per trade
-const DEMO_MAX_PNL = 100;            // $ maximum per trade
+const DEMO_MAX_PNL = 20;             // $ maximum per trade (visible movement, not absurd)
 const DEMO_WIN_RATE = 0.85;          // 85 % of trades are profitable
-// ===========================
+// ============================================
 
 // Referral program
 const MIN_DEPOSIT_AMOUNT = 50;             // any "deposit" must be ≥ $50 (also the joining minimum)
@@ -129,9 +130,16 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'completed',
     processed_at TEXT,
     txid TEXT,
+    is_demo INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+  CREATE TABLE IF NOT EXISTS system_state (
+    id INTEGER PRIMARY KEY,
+    demo_active INTEGER NOT NULL DEFAULT 0,
+    demo_started_at TEXT
+  );
+  INSERT OR IGNORE INTO system_state (id, demo_active) VALUES (1, 0);
 `);
 // Migration safety: add new columns to pre-existing DBs
 try { db.exec('ALTER TABLE users ADD COLUMN bot_active INTEGER NOT NULL DEFAULT 1'); } catch {}
@@ -161,6 +169,9 @@ try { db.exec('ALTER TABLE transactions ADD COLUMN processed_at TEXT'); } catch 
 try { db.exec('ALTER TABLE transactions ADD COLUMN txid TEXT'); } catch {}
 try { db.exec('ALTER TABLE transactions ADD COLUMN usdt_amount REAL'); } catch {}
 try { db.exec('ALTER TABLE transactions ADD COLUMN counterparty_id INTEGER'); } catch {}
+try { db.exec('ALTER TABLE transactions ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('CREATE TABLE IF NOT EXISTS system_state (id INTEGER PRIMARY KEY, demo_active INTEGER NOT NULL DEFAULT 0, demo_started_at TEXT)'); } catch {}
+try { db.exec('INSERT OR IGNORE INTO system_state (id, demo_active) VALUES (1, 0)'); } catch {}
 
 function genReferralCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -675,6 +686,33 @@ app.get('/api/admin/stats', authRequired, adminRequired, (req, res) => {
     totalReferralBonus: Number(totalReferralBonus),
     totalAdminCredit: Number(totalAdminCredit),
     usdt_price: usdtPriceCache.price,
+  });
+});
+
+// ---------- Admin · Demo Mode ----------
+app.get('/api/admin/demo-mode', authRequired, adminRequired, (_req, res) => {
+  res.json(getDemoState());
+});
+
+app.post('/api/admin/demo-mode/start', authRequired, adminRequired, (_req, res) => {
+  if (isDemoActive()) return res.status(400).json({ error: 'demo mode is already active' });
+  startDemoMode();
+  res.json(getDemoState());
+});
+
+app.post('/api/admin/demo-mode/stop', authRequired, adminRequired, (_req, res) => {
+  if (!isDemoActive()) return res.status(400).json({ error: 'demo mode is not active' });
+  // Snapshot stats first so we can report them in the response
+  const before = getDemoState();
+  stopDemoMode();
+  res.json({
+    ok: true,
+    reverted: {
+      trade_count: before.trade_count,
+      total_pnl: before.total_pnl,
+      users_affected: before.users_affected,
+    },
+    state: getDemoState(),
   });
 });
 
@@ -1224,7 +1262,7 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   const tradeCount = (user.daily_pnl_date === today) ? Number(user.daily_trade_count || 0) : 0;
   const effectiveStart = Math.max(1, Number(user.balance) - dailyPnl);
 
-  if (DEMO_MODE) {
+  if (isDemoActive()) {
     return res.json({
       mode: 'demo',
       is_profit_day: true,
@@ -1255,6 +1293,65 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   });
 });
 
+// --- DEMO MODE state helpers + start/stop ---
+function isDemoActive() {
+  const r = db.prepare('SELECT demo_active FROM system_state WHERE id = 1').get();
+  return !!(r && r.demo_active);
+}
+function getDemoState() {
+  const r = db.prepare('SELECT demo_active, demo_started_at FROM system_state WHERE id = 1').get() || {};
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*)                    AS trade_count,
+      COALESCE(SUM(amount), 0)    AS total_pnl,
+      COUNT(DISTINCT user_id)     AS users_affected
+    FROM transactions WHERE is_demo = 1 AND type = 'bot_trade'
+  `).get();
+  return {
+    active: !!r.demo_active,
+    started_at: r.demo_started_at || null,
+    trade_count: Number(stats.trade_count) || 0,
+    total_pnl: +Number(stats.total_pnl).toFixed(2),
+    users_affected: Number(stats.users_affected) || 0,
+    params: { min: DEMO_MIN_PNL, max: DEMO_MAX_PNL, win_rate: DEMO_WIN_RATE, tick_ms: DEMO_TICK_MS },
+  };
+}
+function startDemoMode() {
+  db.prepare("UPDATE system_state SET demo_active = 1, demo_started_at = datetime('now') WHERE id = 1").run();
+}
+function stopDemoMode() {
+  // Rebuild every affected user's state from scratch — subtract demo trade
+  // sum from balance, recompute today's daily_pnl/trade_count from REMAINING
+  // (non-demo) bot trades, then delete the demo trade rows. Real admin
+  // credits and referral bonuses (different types) are untouched.
+  withTransaction(() => {
+    // Subtract demo trade pnl, then ROUND to 2 decimals to absorb floating
+    // point dust (sum-of-floats can leave ε of error otherwise).
+    db.prepare(`
+      UPDATE users SET balance = ROUND(balance - COALESCE((
+        SELECT SUM(amount) FROM transactions
+        WHERE user_id = users.id AND is_demo = 1 AND type = 'bot_trade'
+      ), 0), 2)
+    `).run();
+    db.prepare(`
+      UPDATE users SET
+        daily_pnl = ROUND(COALESCE((
+          SELECT SUM(amount) FROM transactions
+          WHERE user_id = users.id AND type = 'bot_trade' AND is_demo = 0
+            AND date(created_at) = date('now')
+        ), 0), 2),
+        daily_trade_count = COALESCE((
+          SELECT COUNT(*) FROM transactions
+          WHERE user_id = users.id AND type = 'bot_trade' AND is_demo = 0
+            AND date(created_at) = date('now')
+        ), 0),
+        daily_pnl_date = date('now')
+    `).run();
+    db.prepare("DELETE FROM transactions WHERE is_demo = 1 AND type = 'bot_trade'").run();
+    db.prepare('UPDATE system_state SET demo_active = 0, demo_started_at = NULL WHERE id = 1').run();
+  });
+}
+
 // --- DEMO MODE: simple random-walk bot for visible live trading ---
 function demoTick() {
   const today = new Date().toISOString().slice(0, 10);
@@ -1271,7 +1368,8 @@ function demoTick() {
     SET balance = balance + ?, daily_pnl = daily_pnl + ?, daily_trade_count = daily_trade_count + 1, daily_pnl_date = ?
     WHERE id = ?
   `);
-  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
+  // Demo trades are tagged is_demo=1 so stopDemoMode can wipe them cleanly.
+  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note, is_demo) VALUES (?, 'bot_trade', ?, ?, 1)`);
 
   for (const u of activeUsers) {
     if (u.daily_pnl_date !== today) resetDay.run(today, u.id);
@@ -1297,7 +1395,7 @@ function demoTick() {
 }
 
 function botTick() {
-  if (DEMO_MODE) return demoTick();
+  if (isDemoActive()) return demoTick();
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
@@ -1353,7 +1451,10 @@ function botTick() {
     insertTx.run(u.id, pnl, note);
   }
 }
-setInterval(botTick, DEMO_MODE ? DEMO_TICK_MS : BOT_TICK_MS);
+// Always tick on the demo cadence (10s). Production logic gates internally
+// on slot hour + 2-trades-per-day cap, so most ticks are no-ops there.
+// Demo logic uses every tick.
+setInterval(botTick, DEMO_TICK_MS);
 
 // PWA manifest — lets users "install" the site as an app on iOS/Android home screens.
 app.get('/manifest.webmanifest', (_req, res) => {

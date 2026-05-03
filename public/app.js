@@ -870,6 +870,7 @@ async function loadAdmin() {
   try {
     const u = API.user();
     $('admin-name-pill').textContent = u.name;
+    loadDemoState();
     const [stats, users, txs] = await Promise.all([
       API.req('/api/admin/stats'),
       API.req('/api/admin/users'),
@@ -947,6 +948,57 @@ async function loadAdmin() {
 }
 
 $('btn-refresh-admin').addEventListener('click', loadAdmin);
+
+// ---------- Admin · Demo Mode ----------
+async function loadDemoState() {
+  try {
+    const s = await API.req('/api/admin/demo-mode');
+    const badge = $('demo-state-badge');
+    const startBtn = $('btn-demo-start');
+    const stopBtn = $('btn-demo-stop');
+    const stats = $('demo-stats-line');
+    if (s.active) {
+      badge.textContent = '● Active';
+      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-400/10 text-yellow-400 border border-yellow-400/30';
+      startBtn.classList.add('hidden');
+      stopBtn.classList.remove('hidden');
+      const since = s.started_at ? fmtDate(s.started_at) : '—';
+      stats.classList.remove('hidden');
+      stats.innerHTML = `Started: <span class="text-yellow-400">${escapeHtml(since)}</span> · Demo trades: <span class="text-yellow-400">${s.trade_count}</span> · Demo P&L: <span class="text-yellow-400">$${fmt(s.total_pnl)}</span> · Users affected: <span class="text-yellow-400">${s.users_affected}</span>`;
+    } else {
+      badge.textContent = 'Inactive';
+      badge.className = 'text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-line text-muted';
+      startBtn.classList.remove('hidden');
+      stopBtn.classList.add('hidden');
+      stats.classList.add('hidden');
+      stats.innerHTML = '';
+    }
+  } catch (err) {
+    // Silent — admin might not be loaded yet
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'btn-demo-start') {
+    if (!confirm('Start demo mode for ALL users? Auto-trading $10–$20 every ~10s will begin.')) return;
+    try {
+      await API.req('/api/admin/demo-mode/start', { method: 'POST' });
+      toast('Demo mode started — auto-trading live', 'success');
+      loadDemoState();
+      loadAdmin();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  if (e.target.id === 'btn-demo-stop') {
+    if (!confirm('Stop demo mode? Every cent of demo P&L will be reverted across all users. Real admin credits and referral bonuses stay.')) return;
+    try {
+      const r = await API.req('/api/admin/demo-mode/stop', { method: 'POST' });
+      toast(`Demo stopped · reverted ${r.reverted.trade_count} trades ($${fmt(r.reverted.total_pnl)}) across ${r.reverted.users_affected} users`, 'success');
+      loadDemoState();
+      loadAdmin();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+});
 
 // ---------- Admin tabs ----------
 let currentAdminTab = 'users';
