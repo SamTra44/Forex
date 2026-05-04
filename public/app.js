@@ -686,7 +686,7 @@ document.addEventListener('submit', async (e) => {
     const file = fd.get('screenshot');
     try {
       const screenshot = await readImageAsDataUrl(file);
-      await API.req('/api/me/deposits', {
+      const data = await API.req('/api/me/deposits', {
         method: 'POST',
         body: JSON.stringify({
           amount_usdt: Number(fd.get('amount_usdt')),
@@ -696,8 +696,8 @@ document.addEventListener('submit', async (e) => {
       });
       e.target.reset();
       $('dep-preview')?.classList.add('hidden');
-      toast('Deposit submitted — admin will verify within 24 hrs', 'success');
-      loadMyDeposits();
+      if (data.receipt) showReceipt(data.receipt);
+      else { toast('Deposit submitted — admin will verify within 24 hrs', 'success'); loadMyDeposits(); }
     } catch (err) { toast(err.message, 'error'); }
     return;
   }
@@ -713,51 +713,253 @@ document.addEventListener('submit', async (e) => {
         }),
       });
       e.target.reset();
-      showWithdrawReceipt(r.request);     // redirect to share-friendly receipt
+      showReceipt({ type: 'external_withdraw', ...r.request });
     } catch (err) { toast(err.message, 'error'); }
     return;
   }
 });
 
-// ---------- Withdrawal receipt (share-friendly screenshot page) ----------
+// ---------- Receipt (generic, share-friendly screenshot page) ----------
 let lastReceiptText = '';
-function showWithdrawReceipt(req) {
-  if (!req) return;
+
+// Build a config for a given receipt type from the server's `receipt` payload.
+function buildReceiptConfig(receipt) {
+  if (!receipt) return null;
   const u = API.user() || {};
-  const name = req.user_name || u.name || '—';
-  const email = req.user_email || u.email || '';
-  const padded = String(req.id || 0).padStart(4, '0');
-  setText('rcpt-net-usdt', fmt6(req.net_usdt));
-  setText('rcpt-net-usd',  fmt(req.net_usd));
-  setText('rcpt-net-display', fmt(req.net_usd));
-  setText('rcpt-gross',    fmt(req.gross_usd));
-  setText('rcpt-fee',      fmt(req.fee_usd));
-  setText('rcpt-fee-pct',  Math.round((req.fee_pct || 0) * 100));
-  setText('rcpt-rate',     (req.usdt_price || 1).toFixed(4));
-  setText('rcpt-id',       padded);
-  setText('rcpt-date',     req.created_at ? fmtDate(req.created_at) : new Date().toLocaleString());
-  setText('rcpt-user',     name + (email ? ' · ' + email : ''));
-  setText('rcpt-address',  req.to_address || '--');
+  const name = receipt.user_name || u.name || '—';
+  const email = receipt.user_email || u.email || '';
+  const account = name + (email ? ' · ' + email : '');
+  const created = receipt.created_at ? fmtDate(receipt.created_at) : new Date().toLocaleString();
+  const padded = String(receipt.id || 0).padStart(4, '0');
 
-  lastReceiptText = [
-    'QuantEdge — Withdrawal Receipt',
-    `Reference: WD-${padded}`,
-    `Submitted: ${req.created_at || new Date().toISOString()}`,
-    `Account:  ${name}${email ? ' · ' + email : ''}`,
-    '',
-    `Gross:    $${fmt(req.gross_usd)}`,
-    `Fee:      $${fmt(req.fee_usd)} (${Math.round((req.fee_pct || 0) * 100)}%)`,
-    `Net:      $${fmt(req.net_usd)}`,
-    `Payout:   ${fmt6(req.net_usdt)} USDT`,
-    `Network:  TRC-20`,
-    `To:       ${req.to_address}`,
-    '',
-    'Status:   Processing — funds arrive within 24 hrs',
-  ].join('\n');
+  switch (receipt.type) {
+    case 'external_withdraw': {
+      return {
+        prefix: 'WD-',
+        id: padded,
+        title: 'Withdrawal Submitted',
+        iconKind: 'check',
+        amount: fmt6(receipt.net_usdt),
+        amountColor: 'text-yellow-400',
+        amountUnit: 'USDT',
+        amountUnitColor: 'text-yellow-400/80',
+        amountSub: `≈ $${fmt(receipt.net_usd)} USD · ${receipt.network || 'TRC-20'}`,
+        rows: [
+          { label: 'Gross amount',    value: '$' + fmt(receipt.gross_usd) },
+          { label: `Network fee (${Math.round((receipt.fee_pct || 0) * 100)}%)`, value: '−$' + fmt(receipt.fee_usd), valueClass: 'text-orange-400' },
+          { label: 'Net payout',      value: '$' + fmt(receipt.net_usd), boldDivider: true, valueClass: 'text-accent font-semibold' },
+          { label: 'USDT/USD rate',   value: '$' + (receipt.usdt_price || 1).toFixed(4), small: true },
+        ],
+        addressLabel: `Sent to · ${receipt.network || 'TRC-20'}`,
+        address: receipt.to_address,
+        banner: { kind: 'pending', title: 'Processing', text: 'Funds reach your wallet within 24 hrs', color: 'yellow' },
+        plaintext: [
+          'QuantEdge — Withdrawal Receipt',
+          `Reference: WD-${padded}`,
+          `Submitted: ${created}`,
+          `Account: ${account}`, '',
+          `Gross: $${fmt(receipt.gross_usd)}`,
+          `Fee: $${fmt(receipt.fee_usd)} (${Math.round((receipt.fee_pct || 0) * 100)}%)`,
+          `Net: $${fmt(receipt.net_usd)}`,
+          `Payout: ${fmt6(receipt.net_usdt)} USDT`,
+          `Network: ${receipt.network || 'TRC-20'}`,
+          `To: ${receipt.to_address}`, '',
+          'Status: Processing — funds within 24 hrs',
+        ].join('\n'),
+        account, created,
+      };
+    }
+    case 'usdt_buy': {
+      return {
+        prefix: 'TXN-',
+        id: padded,
+        title: 'Withdrawn to USDT Wallet',
+        iconKind: 'check',
+        amount: fmt6(receipt.usdt_received),
+        amountColor: 'text-yellow-400',
+        amountUnit: 'USDT',
+        amountUnitColor: 'text-yellow-400/80',
+        amountSub: `From trading · $${fmt(receipt.usd_paid)} USD @ $${(receipt.price || 1).toFixed(4)}`,
+        rows: [
+          { label: 'From trading USD', value: '−$' + fmt(receipt.usd_paid), valueClass: 'text-orange-400' },
+          { label: 'Live USDT/USD',    value: '$' + (receipt.price || 1).toFixed(4) },
+          { label: 'Into USDT wallet', value: fmt6(receipt.usdt_received) + ' USDT', boldDivider: true, valueClass: 'text-accent font-semibold' },
+        ],
+        addressLabel: 'Your USDT Address',
+        address: receipt.usdt_address,
+        banner: { kind: 'check', title: 'Confirmed', text: 'Funds available in your USDT wallet · instant', color: 'accent' },
+        plaintext: [
+          'QuantEdge — Withdraw to USDT Wallet',
+          `Reference: TXN-${padded}`,
+          `Submitted: ${created}`,
+          `Account: ${account}`, '',
+          `From trading: $${fmt(receipt.usd_paid)}`,
+          `Rate: $${(receipt.price || 1).toFixed(4)}`,
+          `Into USDT wallet: ${fmt6(receipt.usdt_received)} USDT`, '',
+          'Status: Confirmed · instant',
+        ].join('\n'),
+        account, created,
+      };
+    }
+    case 'usdt_sell': {
+      return {
+        prefix: 'TXN-',
+        id: padded,
+        title: 'Added to Trading',
+        iconKind: 'check',
+        amount: '$' + fmt(receipt.usd_received),
+        amountColor: 'text-accent',
+        amountUnit: 'USD',
+        amountUnitColor: 'text-accent/80',
+        amountSub: `From wallet · ${fmt6(receipt.usdt_paid)} USDT @ $${(receipt.price || 1).toFixed(4)}`,
+        rows: [
+          { label: 'From USDT wallet', value: '−' + fmt6(receipt.usdt_paid) + ' USDT', valueClass: 'text-orange-400' },
+          { label: 'Live USDT/USD',    value: '$' + (receipt.price || 1).toFixed(4) },
+          { label: 'Into trading USD', value: '$' + fmt(receipt.usd_received), boldDivider: true, valueClass: 'text-accent font-semibold' },
+        ],
+        banner: { kind: 'check', title: 'Confirmed', text: 'Funds available in your trading balance · instant', color: 'accent' },
+        plaintext: [
+          'QuantEdge — Add Fund to Trading',
+          `Reference: TXN-${padded}`,
+          `Submitted: ${created}`,
+          `Account: ${account}`, '',
+          `From wallet: ${fmt6(receipt.usdt_paid)} USDT`,
+          `Rate: $${(receipt.price || 1).toFixed(4)}`,
+          `Into trading: $${fmt(receipt.usd_received)}`, '',
+          'Status: Confirmed · instant',
+        ].join('\n'),
+        account, created,
+      };
+    }
+    case 'deposit_submitted': {
+      return {
+        prefix: 'DEP-',
+        id: padded,
+        title: 'Deposit Submitted',
+        iconKind: 'clock',
+        amount: fmt6(receipt.amount_usdt),
+        amountColor: 'text-yellow-400',
+        amountUnit: 'USDT',
+        amountUnitColor: 'text-yellow-400/80',
+        amountSub: `≈ $${fmt(receipt.amount_usdt * (receipt.usdt_price || 1))} USD · ${receipt.network || 'TRC-20'}`,
+        rows: [
+          { label: 'Amount sent',  value: fmt6(receipt.amount_usdt) + ' USDT', valueClass: 'text-yellow-400' },
+          { label: 'Network',      value: receipt.network || 'TRC-20' },
+          ...(receipt.txid ? [{ label: 'TXID', value: String(receipt.txid).slice(0, 14) + '…', small: true }] : []),
+          { label: 'Live rate',    value: '$' + (receipt.usdt_price || 1).toFixed(4), small: true },
+        ],
+        addressLabel: `Sent to admin's ${receipt.network || 'TRC-20'} address`,
+        address: receipt.deposit_address,
+        banner: { kind: 'clock', title: 'Awaiting Verification', text: 'Admin reviews payment proof and credits within 24 hrs', color: 'yellow' },
+        plaintext: [
+          'QuantEdge — Deposit Submitted',
+          `Reference: DEP-${padded}`,
+          `Submitted: ${created}`,
+          `Account: ${account}`, '',
+          `Amount: ${fmt6(receipt.amount_usdt)} USDT`,
+          `Network: ${receipt.network || 'TRC-20'}`,
+          `To: ${receipt.deposit_address}`,
+          ...(receipt.txid ? [`TXID: ${receipt.txid}`] : []), '',
+          'Status: Awaiting admin verification (within 24 hrs)',
+        ].join('\n'),
+        account, created,
+      };
+    }
+    default: return null;
+  }
+}
 
+function showReceipt(receipt) {
+  const cfg = buildReceiptConfig(receipt);
+  if (!cfg) return;
+
+  // Hero
+  setText('rcpt-title', cfg.title);
+  const amtEl = $('rcpt-amount');
+  if (amtEl) {
+    amtEl.textContent = cfg.amount;
+    amtEl.className = 'font-bold ' + (cfg.amountColor || 'text-yellow-400');
+  }
+  const unitEl = $('rcpt-amount-unit');
+  if (unitEl) {
+    unitEl.textContent = cfg.amountUnit;
+    unitEl.className = 'text-sm font-medium mt-1 ' + (cfg.amountUnitColor || 'text-yellow-400/80');
+  }
+  setText('rcpt-amount-sub', cfg.amountSub);
+
+  // Hero icon swap (check vs clock)
+  const checkIcon = $('rcpt-icon-check'), clockIcon = $('rcpt-icon-clock'), iconWrap = $('rcpt-icon-wrap');
+  if (cfg.iconKind === 'clock') {
+    checkIcon?.classList.add('hidden');
+    clockIcon?.classList.remove('hidden');
+    iconWrap?.classList.remove('bg-accent/20', 'border-accent/40');
+    iconWrap?.classList.add('bg-yellow-400/20', 'border-yellow-400/40');
+  } else {
+    checkIcon?.classList.remove('hidden');
+    clockIcon?.classList.add('hidden');
+    iconWrap?.classList.add('bg-accent/20', 'border-accent/40');
+    iconWrap?.classList.remove('bg-yellow-400/20', 'border-yellow-400/40');
+  }
+
+  // Reference + timestamp
+  setText('rcpt-id', cfg.prefix + cfg.id);
+  setText('rcpt-date', cfg.created);
+  setText('rcpt-user', cfg.account);
+
+  // Dynamic rows
+  const rowsEl = $('rcpt-rows');
+  if (rowsEl) {
+    rowsEl.innerHTML = '';
+    for (const r of cfg.rows) {
+      const div = document.createElement('div');
+      const cls = r.boldDivider
+        ? 'flex justify-between items-center pt-2 border-t border-line'
+        : (r.small ? 'flex justify-between items-center text-[11px]' : 'flex justify-between items-center');
+      div.className = cls;
+      div.innerHTML = `<span class="${r.small ? 'text-muted' : (r.boldDivider ? 'text-gray-300 font-medium' : 'text-muted')}">${escapeHtml(r.label)}</span><span class="font-mono ${r.valueClass || (r.small ? 'text-muted' : '')}">${escapeHtml(r.value)}</span>`;
+      rowsEl.appendChild(div);
+    }
+  }
+
+  // Address block (optional)
+  const addrBlock = $('rcpt-address-block');
+  if (cfg.address && addrBlock) {
+    setText('rcpt-address-label', cfg.addressLabel || 'Address');
+    setText('rcpt-address', cfg.address);
+    addrBlock.classList.remove('hidden');
+  } else if (addrBlock) {
+    addrBlock.classList.add('hidden');
+  }
+
+  // Banner
+  const banner = $('rcpt-banner');
+  const bClock = $('rcpt-banner-icon-clock'), bCheck = $('rcpt-banner-icon-check');
+  if (banner) {
+    const isYellow = (cfg.banner?.color || 'yellow') === 'yellow';
+    banner.className = isYellow
+      ? 'border-t border-yellow-400/20 bg-yellow-400/5 px-5 py-3 flex items-center gap-3'
+      : 'border-t border-accent/20 bg-accent/5 px-5 py-3 flex items-center gap-3';
+    if (cfg.banner?.kind === 'check') {
+      bCheck?.classList.remove('hidden'); bClock?.classList.add('hidden');
+      bCheck && (bCheck.className = 'w-5 h-5 flex-shrink-0 ' + (isYellow ? 'text-yellow-400' : 'text-accent'));
+    } else {
+      bClock?.classList.remove('hidden'); bCheck?.classList.add('hidden');
+      bClock && (bClock.className = 'w-5 h-5 flex-shrink-0 ' + (isYellow ? 'text-yellow-400' : 'text-accent'));
+    }
+    setText('rcpt-banner-title', cfg.banner?.title || '');
+    const titleEl = $('rcpt-banner-title');
+    if (titleEl) titleEl.className = 'text-[11px] font-semibold uppercase tracking-wider ' + (isYellow ? 'text-yellow-400' : 'text-accent');
+    setText('rcpt-banner-text', cfg.banner?.text || '');
+  }
+
+  lastReceiptText = cfg.plaintext;
   show('view-receipt');
-  // scroll to top so the screenshot starts cleanly
   window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+// Backwards-compat wrapper for the old function name
+function showWithdrawReceipt(req) {
+  showReceipt({ type: 'external_withdraw', ...req });
 }
 
 // Receipt buttons
@@ -1085,8 +1287,8 @@ document.addEventListener('submit', async (e) => {
         body: JSON.stringify({ usd_amount: Number(fd.get('usd_amount')) }),
       });
       e.target.reset();
-      toast(`Bought ${fmt6(data.usdt_received)} USDT`, 'success');
-      loadDashboard();
+      if (data.receipt) showReceipt(data.receipt);
+      else { toast(`Bought ${fmt6(data.usdt_received)} USDT`, 'success'); loadDashboard(); }
     } catch (err) { toast(err.message, 'error'); }
     return;
   }
@@ -1099,8 +1301,8 @@ document.addEventListener('submit', async (e) => {
         body: JSON.stringify({ usdt_amount: Number(fd.get('usdt_amount')) }),
       });
       e.target.reset();
-      toast(`Sold USDT · received $${fmt(data.usd_received)}`, 'success');
-      loadDashboard();
+      if (data.receipt) showReceipt(data.receipt);
+      else { toast(`Sold USDT · received $${fmt(data.usd_received)}`, 'success'); loadDashboard(); }
     } catch (err) { toast(err.message, 'error'); }
     return;
   }

@@ -760,20 +760,23 @@
     <div id="receipt-card" class="bg-card border border-line rounded-2xl overflow-hidden glow">
       <!-- Status hero -->
       <div class="bg-gradient-to-br from-accent/15 via-yellow-400/5 to-accent2/15 border-b border-line p-6 text-center">
-        <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent/20 border border-accent/40 mb-3">
-          <svg class="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+        <div id="rcpt-icon-wrap" class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent/20 border border-accent/40 mb-3">
+          <svg id="rcpt-icon-check" class="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+          <svg id="rcpt-icon-clock" class="w-7 h-7 text-yellow-400 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         </div>
-        <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Withdrawal Submitted</div>
-        <div class="text-4xl font-bold text-yellow-400 font-mono leading-tight"><span id="rcpt-net-usdt">0.000000</span></div>
-        <div class="text-sm text-yellow-400/80 mt-1 font-medium">USDT</div>
-        <div class="text-xs text-muted mt-2">≈ $<span id="rcpt-net-usd">0.00</span> USD · TRC-20</div>
+        <div id="rcpt-title" class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Receipt</div>
+        <div class="text-4xl font-bold font-mono leading-tight" id="rcpt-amount-wrap">
+          <span id="rcpt-amount">0.000000</span>
+        </div>
+        <div id="rcpt-amount-unit" class="text-sm font-medium mt-1">USDT</div>
+        <div id="rcpt-amount-sub" class="text-xs text-muted mt-2">—</div>
       </div>
 
       <!-- Reference + timestamp -->
       <div class="grid grid-cols-2 gap-px bg-line">
         <div class="bg-card p-3 text-center">
           <div class="text-[9px] uppercase tracking-wider text-muted mb-0.5">Reference</div>
-          <div class="text-sm font-mono text-accent">WD-<span id="rcpt-id">0000</span></div>
+          <div class="text-sm font-mono text-accent" id="rcpt-id">—</div>
         </div>
         <div class="bg-card p-3 text-center">
           <div class="text-[9px] uppercase tracking-wider text-muted mb-0.5">Submitted</div>
@@ -781,44 +784,30 @@
         </div>
       </div>
 
-      <!-- Breakdown -->
-      <div class="p-5 space-y-2.5 text-sm">
-        <div class="flex justify-between items-center">
-          <span class="text-muted">Account</span>
-          <span class="text-gray-200 truncate ml-3" id="rcpt-user">—</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-muted">Gross amount</span>
-          <span class="font-mono">$<span id="rcpt-gross">0.00</span></span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-muted">Network fee (<span id="rcpt-fee-pct">20</span>%)</span>
-          <span class="font-mono text-orange-400">−$<span id="rcpt-fee">0.00</span></span>
-        </div>
-        <div class="flex justify-between items-center pt-2 border-t border-line">
-          <span class="text-gray-300 font-medium">Net payout</span>
-          <span class="font-mono text-accent font-semibold">$<span id="rcpt-net-display">0.00</span></span>
-        </div>
-        <div class="flex justify-between items-center text-[11px]">
-          <span class="text-muted">USDT/USD rate</span>
-          <span class="font-mono text-muted">$<span id="rcpt-rate">1.0000</span></span>
-        </div>
+      <!-- Account row -->
+      <div class="px-5 pt-4 pb-2 flex justify-between items-center text-sm">
+        <span class="text-muted">Account</span>
+        <span class="text-gray-200 truncate ml-3" id="rcpt-user">—</span>
       </div>
 
-      <!-- Destination address -->
-      <div class="px-5 pb-5">
+      <!-- Dynamic rows (populated per receipt type) -->
+      <div id="rcpt-rows" class="px-5 pb-3 space-y-2.5 text-sm"></div>
+
+      <!-- Optional address / TXID block -->
+      <div id="rcpt-address-block" class="px-5 pb-5 hidden">
         <div class="bg-bg border border-line rounded-lg p-3">
-          <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Sent to · TRC-20</div>
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-1" id="rcpt-address-label">Address</div>
           <code id="rcpt-address" class="block text-[11px] font-mono text-yellow-400 break-all leading-snug">--</code>
         </div>
       </div>
 
-      <!-- ETA banner -->
-      <div class="bg-yellow-400/5 border-t border-yellow-400/20 px-5 py-3 flex items-center gap-3">
-        <svg class="w-5 h-5 text-yellow-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <!-- Status banner (color varies by type) -->
+      <div id="rcpt-banner" class="border-t px-5 py-3 flex items-center gap-3">
+        <svg id="rcpt-banner-icon-clock" class="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <svg id="rcpt-banner-icon-check" class="w-5 h-5 flex-shrink-0 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
         <div>
-          <div class="text-[11px] font-semibold text-yellow-400 uppercase tracking-wider">Processing</div>
-          <div class="text-xs text-gray-300">Funds reach your wallet within 24 hrs</div>
+          <div id="rcpt-banner-title" class="text-[11px] font-semibold uppercase tracking-wider">Status</div>
+          <div id="rcpt-banner-text" class="text-xs text-gray-300">—</div>
         </div>
       </div>
 

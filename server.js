@@ -471,11 +471,25 @@ app.post('/api/me/deposits', authRequired, (req, res) => {
     return res.status(400).json({ error: 'screenshot required (PNG/JPG, ≤ 600 KB)' });
   }
   const addr = getConfig('deposit_address');
+  const network = getConfig('deposit_network', 'TRC-20');
   const r = db.prepare(`
     INSERT INTO deposit_requests (user_id, amount_usdt, deposit_address, txid, screenshot_data)
     VALUES (?, ?, ?, ?, ?)
   `).run(req.user.id, +amountUsdt.toFixed(6), addr, txid, screenshot);
-  res.json({ ok: true, id: r.lastInsertRowid });
+  const id = Number(r.lastInsertRowid);
+  const created = db.prepare('SELECT created_at FROM deposit_requests WHERE id = ?').get(id);
+  const me = db.prepare('SELECT email, name FROM users WHERE id = ?').get(req.user.id);
+  res.json({
+    ok: true, id,
+    receipt: {
+      id, type: 'deposit_submitted',
+      amount_usdt: +amountUsdt.toFixed(6),
+      txid, deposit_address: addr, network,
+      usdt_price: usdtPriceCache.price,
+      created_at: created?.created_at,
+      user_email: me?.email, user_name: me?.name,
+    },
+  });
 });
 
 app.get('/api/me/deposits', authRequired, (req, res) => {
@@ -1333,17 +1347,29 @@ app.post('/api/usdt/buy', authRequired, (req, res) => {
   const usdt = round6(usd / price);
   const note = `Buy ${usdt.toFixed(6)} USDT @ $${price.toFixed(4)}`;
 
+  let txId = null;
   withTransaction(() => {
     db.prepare('UPDATE users SET balance = balance - ?, usdt_balance = usdt_balance + ? WHERE id = ?')
       .run(round2(usd), usdt, user.id);
-    db.prepare(`
+    const r = db.prepare(`
       INSERT INTO transactions (user_id, type, amount, usdt_amount, note)
       VALUES (?, 'usdt_buy', ?, ?, ?)
     `).run(user.id, -round2(usd), usdt, note);
+    txId = Number(r.lastInsertRowid);
   });
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  res.json({ user: publicUser(updated), price, usdt_received: usdt });
+  const tx = db.prepare('SELECT created_at FROM transactions WHERE id = ?').get(txId);
+  res.json({
+    user: publicUser(updated), price, usdt_received: usdt,
+    receipt: {
+      id: txId, type: 'usdt_buy',
+      usd_paid: round2(usd), usdt_received: usdt, price,
+      usdt_address: updated.usdt_address || null,
+      created_at: tx?.created_at,
+      user_email: user.email, user_name: user.name,
+    },
+  });
 });
 
 // Sell USDT for USD balance
@@ -1364,17 +1390,28 @@ app.post('/api/usdt/sell', authRequired, (req, res) => {
   if (usd <= 0) return res.status(400).json({ error: 'amount too small' });
   const note = `Sell ${usdt.toFixed(6)} USDT @ $${price.toFixed(4)}`;
 
+  let txId = null;
   withTransaction(() => {
     db.prepare('UPDATE users SET balance = balance + ?, usdt_balance = usdt_balance - ? WHERE id = ?')
       .run(usd, round6(usdt), user.id);
-    db.prepare(`
+    const r = db.prepare(`
       INSERT INTO transactions (user_id, type, amount, usdt_amount, note)
       VALUES (?, 'usdt_sell', ?, ?, ?)
     `).run(user.id, usd, -round6(usdt), note);
+    txId = Number(r.lastInsertRowid);
   });
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  res.json({ user: publicUser(updated), price, usd_received: usd });
+  const tx = db.prepare('SELECT created_at FROM transactions WHERE id = ?').get(txId);
+  res.json({
+    user: publicUser(updated), price, usd_received: usd,
+    receipt: {
+      id: txId, type: 'usdt_sell',
+      usdt_paid: round6(usdt), usd_received: usd, price,
+      created_at: tx?.created_at,
+      user_email: user.email, user_name: user.name,
+    },
+  });
 });
 
 // User-to-user transfers are disabled by design. Internal USDT stays in
