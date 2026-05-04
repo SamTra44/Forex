@@ -75,8 +75,10 @@ function fmt6(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 }
 function show(viewId) {
-  ['view-auth', 'view-dashboard', 'view-admin'].forEach(id => $(id).classList.add('hidden'));
-  $(viewId).classList.remove('hidden');
+  ['view-auth', 'view-dashboard', 'view-admin', 'view-receipt'].forEach(id => {
+    const el = $(id); if (el) el.classList.add('hidden');
+  });
+  const tgt = $(viewId); if (tgt) tgt.classList.remove('hidden');
 }
 
 // ---------- Auth tab toggle ----------
@@ -711,12 +713,82 @@ document.addEventListener('submit', async (e) => {
         }),
       });
       e.target.reset();
-      toast(`Withdrawal queued · net ${fmt6(r.request.net_usdt)} USDT in ~24h`, 'success');
-      loadDashboard();
-      loadMyWithdrawals();
-      loadWithdrawInfo();
+      showWithdrawReceipt(r.request);     // redirect to share-friendly receipt
     } catch (err) { toast(err.message, 'error'); }
     return;
+  }
+});
+
+// ---------- Withdrawal receipt (share-friendly screenshot page) ----------
+let lastReceiptText = '';
+function showWithdrawReceipt(req) {
+  if (!req) return;
+  const u = API.user() || {};
+  const name = req.user_name || u.name || '—';
+  const email = req.user_email || u.email || '';
+  const padded = String(req.id || 0).padStart(4, '0');
+  setText('rcpt-net-usdt', fmt6(req.net_usdt));
+  setText('rcpt-net-usd',  fmt(req.net_usd));
+  setText('rcpt-net-display', fmt(req.net_usd));
+  setText('rcpt-gross',    fmt(req.gross_usd));
+  setText('rcpt-fee',      fmt(req.fee_usd));
+  setText('rcpt-fee-pct',  Math.round((req.fee_pct || 0) * 100));
+  setText('rcpt-rate',     (req.usdt_price || 1).toFixed(4));
+  setText('rcpt-id',       padded);
+  setText('rcpt-date',     req.created_at ? fmtDate(req.created_at) : new Date().toLocaleString());
+  setText('rcpt-user',     name + (email ? ' · ' + email : ''));
+  setText('rcpt-address',  req.to_address || '--');
+
+  lastReceiptText = [
+    'QuantEdge — Withdrawal Receipt',
+    `Reference: WD-${padded}`,
+    `Submitted: ${req.created_at || new Date().toISOString()}`,
+    `Account:  ${name}${email ? ' · ' + email : ''}`,
+    '',
+    `Gross:    $${fmt(req.gross_usd)}`,
+    `Fee:      $${fmt(req.fee_usd)} (${Math.round((req.fee_pct || 0) * 100)}%)`,
+    `Net:      $${fmt(req.net_usd)}`,
+    `Payout:   ${fmt6(req.net_usdt)} USDT`,
+    `Network:  TRC-20`,
+    `To:       ${req.to_address}`,
+    '',
+    'Status:   Processing — funds arrive within 24 hrs',
+  ].join('\n');
+
+  show('view-receipt');
+  // scroll to top so the screenshot starts cleanly
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+// Receipt buttons
+document.addEventListener('click', async (e) => {
+  if (!e.target) return;
+  if (e.target.closest && e.target.closest('#btn-rcpt-done')) {
+    show('view-dashboard');
+    loadDashboard();
+    return;
+  }
+  if (e.target.closest && e.target.closest('#btn-rcpt-copy')) {
+    if (!lastReceiptText) return;
+    try {
+      await navigator.clipboard.writeText(lastReceiptText);
+      toast('Receipt details copied', 'success');
+    } catch { toast('Copy failed', 'error'); }
+    return;
+  }
+  if (e.target.closest && e.target.closest('#btn-rcpt-share')) {
+    // Try Web Share API (mobile-friendly: opens WhatsApp picker etc.)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'QuantEdge Withdrawal Receipt',
+          text: lastReceiptText,
+        });
+        return;
+      } catch { /* user cancelled — fall through to fallback */ }
+    }
+    // Fallback: hint to take screenshot
+    toast('Take a screenshot of the card above to share on WhatsApp status', 'info');
   }
 });
 

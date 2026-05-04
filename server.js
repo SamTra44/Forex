@@ -530,22 +530,29 @@ app.post('/api/me/withdrawals', authRequired, (req, res) => {
   const netUsdt = +(netUsd / price).toFixed(6);
   const grossR  = +grossUsd.toFixed(2);
 
+  let newId = null;
   withTransaction(() => {
     db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(grossR, user.id);
-    db.prepare(`
+    const r = db.prepare(`
       INSERT INTO withdraw_requests
         (user_id, gross_usd, fee_pct, fee_usd, net_usd, net_usdt, usdt_price,
          to_address, network, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'TRC-20', 'pending')
     `).run(user.id, grossR, fee_pct, feeUsd, netUsd, netUsdt, price, toAddr);
+    newId = Number(r.lastInsertRowid);
   });
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const created = db.prepare('SELECT created_at FROM withdraw_requests WHERE id = ?').get(newId);
   res.json({
     user: publicUser(updated),
     request: {
+      id: newId,
       gross_usd: grossR, fee_pct, fee_usd: feeUsd, net_usd: netUsd,
-      net_usdt: netUsdt, usdt_price: price, to_address: toAddr, eta_hours: 24,
+      net_usdt: netUsdt, usdt_price: price, to_address: toAddr,
+      network: 'TRC-20', status: 'pending', eta_hours: 24,
+      created_at: created?.created_at,
+      user_email: user.email, user_name: user.name,
     },
   });
 });

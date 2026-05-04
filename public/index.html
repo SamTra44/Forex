@@ -738,6 +738,113 @@
   </main>
 </div>
 
+<!-- Withdrawal Receipt view (share-friendly, screenshot-ready) -->
+<div id="view-receipt" class="hidden min-h-screen relative overflow-hidden">
+  <!-- Decorative gradient blobs -->
+  <div class="absolute inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-accent/10 blur-3xl"></div>
+    <div class="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-yellow-400/10 blur-3xl"></div>
+    <div class="absolute top-1/3 left-1/2 -translate-x-1/2 w-72 h-72 rounded-full bg-accent2/10 blur-3xl"></div>
+  </div>
+
+  <div class="relative max-w-md mx-auto px-4 py-8">
+    <!-- Brand header -->
+    <div class="flex items-center justify-center gap-2 mb-6">
+      <svg class="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
+      </svg>
+      <span class="text-xl font-bold gradient-text">QuantEdge</span>
+    </div>
+
+    <!-- Main receipt card (this is the area to screenshot) -->
+    <div id="receipt-card" class="bg-card border border-line rounded-2xl overflow-hidden glow">
+      <!-- Status hero -->
+      <div class="bg-gradient-to-br from-accent/15 via-yellow-400/5 to-accent2/15 border-b border-line p-6 text-center">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-accent/20 border border-accent/40 mb-3">
+          <svg class="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="text-[11px] uppercase tracking-[0.2em] text-muted mb-2">Withdrawal Submitted</div>
+        <div class="text-4xl font-bold text-yellow-400 font-mono leading-tight"><span id="rcpt-net-usdt">0.000000</span></div>
+        <div class="text-sm text-yellow-400/80 mt-1 font-medium">USDT</div>
+        <div class="text-xs text-muted mt-2">≈ $<span id="rcpt-net-usd">0.00</span> USD · TRC-20</div>
+      </div>
+
+      <!-- Reference + timestamp -->
+      <div class="grid grid-cols-2 gap-px bg-line">
+        <div class="bg-card p-3 text-center">
+          <div class="text-[9px] uppercase tracking-wider text-muted mb-0.5">Reference</div>
+          <div class="text-sm font-mono text-accent">WD-<span id="rcpt-id">0000</span></div>
+        </div>
+        <div class="bg-card p-3 text-center">
+          <div class="text-[9px] uppercase tracking-wider text-muted mb-0.5">Submitted</div>
+          <div class="text-sm font-mono text-gray-300" id="rcpt-date">—</div>
+        </div>
+      </div>
+
+      <!-- Breakdown -->
+      <div class="p-5 space-y-2.5 text-sm">
+        <div class="flex justify-between items-center">
+          <span class="text-muted">Account</span>
+          <span class="text-gray-200 truncate ml-3" id="rcpt-user">—</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-muted">Gross amount</span>
+          <span class="font-mono">$<span id="rcpt-gross">0.00</span></span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-muted">Network fee (<span id="rcpt-fee-pct">20</span>%)</span>
+          <span class="font-mono text-orange-400">−$<span id="rcpt-fee">0.00</span></span>
+        </div>
+        <div class="flex justify-between items-center pt-2 border-t border-line">
+          <span class="text-gray-300 font-medium">Net payout</span>
+          <span class="font-mono text-accent font-semibold">$<span id="rcpt-net-display">0.00</span></span>
+        </div>
+        <div class="flex justify-between items-center text-[11px]">
+          <span class="text-muted">USDT/USD rate</span>
+          <span class="font-mono text-muted">$<span id="rcpt-rate">1.0000</span></span>
+        </div>
+      </div>
+
+      <!-- Destination address -->
+      <div class="px-5 pb-5">
+        <div class="bg-bg border border-line rounded-lg p-3">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Sent to · TRC-20</div>
+          <code id="rcpt-address" class="block text-[11px] font-mono text-yellow-400 break-all leading-snug">--</code>
+        </div>
+      </div>
+
+      <!-- ETA banner -->
+      <div class="bg-yellow-400/5 border-t border-yellow-400/20 px-5 py-3 flex items-center gap-3">
+        <svg class="w-5 h-5 text-yellow-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <div>
+          <div class="text-[11px] font-semibold text-yellow-400 uppercase tracking-wider">Processing</div>
+          <div class="text-xs text-gray-300">Funds reach your wallet within 24 hrs</div>
+        </div>
+      </div>
+
+      <!-- Brand footer inside card -->
+      <div class="bg-bg/40 border-t border-line px-5 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+          <span class="text-[11px] font-bold gradient-text">QuantEdge</span>
+        </div>
+        <span class="text-[10px] text-muted font-mono">algo trading platform</span>
+      </div>
+    </div>
+
+    <!-- Action buttons (these are NOT part of the screenshot card) -->
+    <div class="flex gap-2 mt-5">
+      <button id="btn-rcpt-share" class="flex-1 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 font-semibold py-3 rounded-lg text-sm hover:bg-yellow-400/20 transition flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        Save Image
+      </button>
+      <button id="btn-rcpt-copy" class="flex-1 bg-accent2/10 border border-accent2/30 text-accent2 font-semibold py-3 rounded-lg text-sm hover:bg-accent2/20 transition">Copy Details</button>
+    </div>
+    <button id="btn-rcpt-done" class="w-full mt-2 bg-accent hover:bg-accent/90 text-bg font-semibold py-3 rounded-lg text-sm transition">Back to Dashboard</button>
+    <p class="text-center text-[10px] text-muted mt-3">Tip: take a screenshot of the card above to share on WhatsApp status.</p>
+  </div>
+</div>
+
 <!-- Admin view -->
 <div id="view-admin" class="hidden min-h-screen">
   <header class="border-b border-line bg-panel/60 backdrop-blur sticky top-0 z-30">
