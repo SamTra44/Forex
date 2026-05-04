@@ -939,12 +939,14 @@ function showReceipt(receipt) {
     banner.className = isYellow
       ? 'border-t border-yellow-400/20 bg-yellow-400/5 px-5 py-3 flex items-center gap-3'
       : 'border-t border-accent/20 bg-accent/5 px-5 py-3 flex items-center gap-3';
+    // SVG elements have className as a read-only SVGAnimatedString — must use setAttribute.
+    const iconCls = 'w-5 h-5 flex-shrink-0 ' + (isYellow ? 'text-yellow-400' : 'text-accent');
     if (cfg.banner?.kind === 'check') {
       bCheck?.classList.remove('hidden'); bClock?.classList.add('hidden');
-      bCheck && (bCheck.className = 'w-5 h-5 flex-shrink-0 ' + (isYellow ? 'text-yellow-400' : 'text-accent'));
+      if (bCheck) bCheck.setAttribute('class', iconCls);
     } else {
       bClock?.classList.remove('hidden'); bCheck?.classList.add('hidden');
-      bClock && (bClock.className = 'w-5 h-5 flex-shrink-0 ' + (isYellow ? 'text-yellow-400' : 'text-accent'));
+      if (bClock) bClock.setAttribute('class', iconCls);
     }
     setText('rcpt-banner-title', cfg.banner?.title || '');
     const titleEl = $('rcpt-banner-title');
