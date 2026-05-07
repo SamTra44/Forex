@@ -1552,7 +1552,6 @@ app.delete('/api/admin/backup/:name', authRequired, adminRequired, (req, res) =>
 
 // ---------- Bot (algo trading simulator) ----------
 const SYMBOLS = ['EUR/USD', 'BTC/USD', 'GOLD', 'ETH/USD', 'GBP/USD', 'NAS100', 'XAU/USD', 'AAPL'];
-const BOT_TICK_MS = 60_000;          // poll every minute
 const BOT_MIN_PNL = 0.05;
 
 app.get('/api/me/bot/trades', authRequired, (req, res) => {
@@ -1616,13 +1615,6 @@ app.get('/api/me/bot/history', authRequired, (req, res) => {
   res.json({ period, summaries, trades });
 });
 
-// Deterministic per-user trade slots (each user gets 2 distinct UTC hours per day).
-function userSlotHours(userId) {
-  const slot1 = 8 + (((userId | 0) * 7919) >>> 0) % 6;   // 8..13
-  const slot2 = 14 + (((userId | 0) * 1597) >>> 0) % 6;  // 14..19
-  return [slot1, slot2];
-}
-
 app.get('/api/me/bot/status', authRequired, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'not found' });
@@ -1632,7 +1624,6 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   const effectiveStart = Math.max(1, Number(user.balance) - dailyPnl);
 
   const targetPnl = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
-  const [slot1, slot2] = userSlotHours(user.id);
   res.json({
     mode: 'profit',
     is_profit_day: true,
@@ -1642,68 +1633,50 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
     day_start_balance: effectiveStart,
     trades_per_day: TRADES_PER_DAY,
     daily_trade_count: tradeCount,
-    slot_hours_utc: [slot1, slot2],
     progress_pct: targetPnl !== 0 ? Math.max(0, Math.min(100, (dailyPnl / targetPnl) * 100)) : 0,
   });
 });
 
 function botTick() {
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const hour = now.getUTCHours();
+  const today = new Date().toISOString().slice(0, 10);
 
-  const activeUsers = db.prepare(`
-    SELECT id, balance, daily_pnl, daily_pnl_date, daily_trade_count
-    FROM users WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
-  `).all();
-  if (activeUsers.length === 0) return;
+  // Only users who haven't been booked today yet — at start-of-day we credit
+  // the full PROFIT_DAY_PCT immediately as 2 quick back-to-back trades.
+  const dueUsers = db.prepare(`
+    SELECT id, balance, email
+    FROM users
+    WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
+      AND (daily_pnl_date IS NULL OR daily_pnl_date != ?)
+  `).all(today);
+  if (dueUsers.length === 0) return;
 
-  const resetDay = db.prepare(`UPDATE users SET daily_pnl = 0, daily_trade_count = 0, daily_pnl_date = ? WHERE id = ?`);
-  const updateTrade = db.prepare(`
-    UPDATE users
-    SET balance = balance + ?, daily_pnl = daily_pnl + ?, daily_trade_count = daily_trade_count + 1, daily_pnl_date = ?
+  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
+  const finalize  = db.prepare(`
+    UPDATE users SET balance = balance + ?, daily_pnl = ?, daily_trade_count = ?, daily_pnl_date = ?
     WHERE id = ?
   `);
-  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
 
-  for (const u of activeUsers) {
-    let dailyPnl = Number(u.daily_pnl) || 0;
-    let tradeCount = Number(u.daily_trade_count) || 0;
-    if (u.daily_pnl_date !== today) {
-      dailyPnl = 0;
-      tradeCount = 0;
-      resetDay.run(today, u.id);
+  for (const u of dueUsers) {
+    const start = Math.max(1, Number(u.balance));
+    const target = +(start * PROFIT_DAY_PCT).toFixed(2);
+    if (target < BOT_MIN_PNL) continue;
+    // Split into 2 trades with 40-60% randomness so the feed reads naturally.
+    const portion = 0.40 + Math.random() * 0.20;
+    const t1 = +(target * portion).toFixed(2);
+    const t2 = +(target - t1).toFixed(2);
+
+    for (const pnl of [t1, t2]) {
+      const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+      const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
+      insertTx.run(u.id, pnl, `${side} ${symbol} TP hit`);
     }
-    if (tradeCount >= TRADES_PER_DAY) continue;
-
-    const [slot1, slot2] = userSlotHours(u.id);
-    const isFirstSlot  = hour === slot1 && tradeCount === 0;
-    const isSecondSlot = hour === slot2 && tradeCount === 1;
-    if (!isFirstSlot && !isSecondSlot) continue;
-
-    const effectiveStart = Math.max(1, Number(u.balance) - dailyPnl);
-    const targetTotal = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
-
-    let pnl;
-    if (tradeCount === 0) {
-      // First trade: 45–55% of total target (slight randomness, always positive)
-      const portion = 0.45 + Math.random() * 0.10;
-      pnl = +(targetTotal * portion).toFixed(2);
-    } else {
-      // Second trade: complete the remaining target so daily total = exactly 0.7%
-      pnl = +(targetTotal - dailyPnl).toFixed(2);
-    }
-    if (pnl < BOT_MIN_PNL) pnl = +BOT_MIN_PNL.toFixed(2);
-
-    const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-    const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
-    const note = `${side} ${symbol} TP hit`;
-
-    updateTrade.run(pnl, pnl, today, u.id);
-    insertTx.run(u.id, pnl, note);
+    finalize.run(target, target, TRADES_PER_DAY, today, u.id);
   }
 }
-setInterval(botTick, BOT_TICK_MS);
+// Tick every 15 seconds — booking is once per user per day, but we want
+// freshly-credited / newly-deposited users to see profit fast.
+setInterval(botTick, 15_000);
+botTick();
 
 // PWA manifest — lets users "install" the site as an app on iOS/Android home screens.
 app.get('/manifest.webmanifest', (_req, res) => {
