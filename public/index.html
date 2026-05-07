@@ -876,6 +876,22 @@
     <!-- Tab: Users -->
     <div id="admin-tab-users">
 
+    <!-- Force-book today's 0.7% -->
+    <div class="bg-card border border-line rounded-xl p-5 mb-6">
+      <div class="flex items-start justify-between flex-wrap gap-3">
+        <div class="flex items-start gap-3 flex-1 min-w-0">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h3 class="font-semibold mb-1">Book Today's 0.7% — All Users</h3>
+            <p class="text-xs text-muted">Books today's daily profit target across every active account right now (instead of waiting for the bot's automatic morning tick). Idempotent — safe to re-run; previous booking is refunded and re-applied so the day's P&amp;L always equals exactly 0.70%.</p>
+          </div>
+        </div>
+        <button id="btn-force-book" class="bg-accent hover:bg-accent/90 text-bg font-semibold px-4 py-2.5 rounded-lg text-sm transition">Book 0.7% Now</button>
+      </div>
+    </div>
+
     <!-- Deposit Address config card -->
     <div class="bg-card border border-line rounded-xl p-5 mb-6">
       <div class="flex items-start justify-between flex-wrap gap-3">

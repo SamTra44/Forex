@@ -1421,6 +1421,24 @@ async function loadAdmin() {
 
 $('btn-refresh-admin').addEventListener('click', loadAdmin);
 
+// "Book Today Now" — force-fire today's 0.7% for everyone
+document.addEventListener('click', async (e) => {
+  if (e.target?.id !== 'btn-force-book') return;
+  if (!confirm('Book today\'s 0.7% target for ALL active users right now? Existing bookings (if any) will be refunded and re-applied.')) return;
+  e.target.disabled = true;
+  e.target.textContent = 'Booking…';
+  try {
+    const r = await API.req('/api/admin/bot/force-book-today', { method: 'POST' });
+    toast(`Booked $${fmt(r.total_pnl)} across ${r.users_booked} users · ${r.date}`, 'success');
+    loadAdmin();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    e.target.disabled = false;
+    e.target.textContent = 'Book 0.7% Now';
+  }
+});
+
 // ---------- Admin · Deposit Address config ----------
 async function loadDepositAddressConfig() {
   try {

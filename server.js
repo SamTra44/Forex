@@ -877,6 +877,56 @@ app.get('/api/admin/stats', authRequired, adminRequired, (req, res) => {
   });
 });
 
+// ---------- Admin · Force-book today's 0.7% for all users ----------
+// One-shot endpoint that books today's 0.7% target right now for every active
+// non-admin user, regardless of slot timing. Idempotent: if a user already
+// has today's bot trades, they're refunded and re-booked so the daily P&L
+// always equals exactly target.
+app.post('/api/admin/bot/force-book-today', authRequired, adminRequired, (_req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const users = db.prepare(`
+    SELECT id, balance, daily_pnl, daily_pnl_date
+    FROM users WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
+  `).all();
+
+  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
+  const refundBal = db.prepare(`UPDATE users SET balance = balance - ? WHERE id = ?`);
+  const deleteToday = db.prepare(`DELETE FROM transactions WHERE user_id = ? AND type = 'bot_trade' AND date(created_at) = date('now')`);
+  const finalize = db.prepare(`UPDATE users SET balance = balance + ?, daily_pnl = ?, daily_trade_count = ?, daily_pnl_date = ? WHERE id = ?`);
+
+  let booked = 0, totalPnl = 0;
+  withTransaction(() => {
+    for (const u of users) {
+      // Effective start is current balance minus today's prior booking (if any),
+      // so re-running this endpoint never compounds the bot on top of itself.
+      const todaysPnl = (u.daily_pnl_date === today) ? Number(u.daily_pnl) : 0;
+      const start = Math.max(1, Number(u.balance) - todaysPnl);
+      const target = +(start * PROFIT_DAY_PCT).toFixed(2);
+      if (target < BOT_MIN_PNL) continue;
+
+      // Wipe today's old bot trades + refund their P&L from balance, then re-book fresh.
+      if (todaysPnl !== 0) {
+        refundBal.run(todaysPnl, u.id);
+        deleteToday.run(u.id);
+      }
+
+      const portion = 0.40 + Math.random() * 0.20;
+      const t1 = +(target * portion).toFixed(2);
+      const t2 = +(target - t1).toFixed(2);
+      for (const pnl of [t1, t2]) {
+        const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+        const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
+        insertTx.run(u.id, pnl, `${side} ${symbol} TP hit`);
+      }
+      finalize.run(target, target, TRADES_PER_DAY, today, u.id);
+      booked++;
+      totalPnl += target;
+    }
+  });
+
+  res.json({ ok: true, users_booked: booked, total_pnl: +totalPnl.toFixed(2), date: today });
+});
+
 // ---------- Admin · Deposit address config ----------
 app.get('/api/admin/config/deposit-address', authRequired, adminRequired, (_req, res) => {
   res.json({
