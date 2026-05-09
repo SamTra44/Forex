@@ -66,6 +66,26 @@
   .tab-active { color: #22d3a7; border-color: #22d3a7; }
   .toast-enter { animation: slideIn 0.3s ease-out; }
   @keyframes slideIn { from { transform: translateX(120%); } to { transform: translateX(0); } }
+  /* Landing page polish */
+  .reveal { opacity: 0; transform: translateY(20px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: translateY(0); }
+  .glow-strong { box-shadow: 0 0 60px rgba(34,211,167,0.15), 0 0 120px rgba(59,130,246,0.08); }
+  .grad-border { position: relative; }
+  .grad-border::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+    background: linear-gradient(135deg, rgba(34,211,167,.5), rgba(59,130,246,.3) 40%, rgba(250,204,21,.2));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none;
+  }
+  .marquee { animation: marquee 28s linear infinite; }
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .float-slow { animation: floatY 6s ease-in-out infinite; }
+  @keyframes floatY { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  .ticker-dot { box-shadow: 0 0 10px currentColor; }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .faq-icon { transform: rotate(45deg); }
+  .faq-icon { transition: transform .2s ease; }
 </style>
 </head>
 <body>
@@ -73,17 +93,663 @@
 <!-- Toasts -->
 <div id="toasts" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
+<!-- ============================================================
+     PUBLIC LANDING (shown to unauthenticated visitors)
+     ============================================================ -->
+<div id="view-landing" class="min-h-screen">
+  <!-- Sticky nav -->
+  <header class="border-b border-line bg-bg/80 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg class="w-7 h-7 text-accent float-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+        <span class="text-lg sm:text-xl font-bold gradient-text">QuantEdge</span>
+        <span class="ml-1 px-1.5 py-0.5 text-[9px] uppercase tracking-wider bg-accent/10 text-accent rounded">Live</span>
+      </div>
+      <nav class="hidden md:flex items-center gap-7 text-sm text-muted">
+        <a href="#how" class="hover:text-gray-200 transition">How it works</a>
+        <a href="#security" class="hover:text-gray-200 transition">Security</a>
+        <a href="#tech" class="hover:text-gray-200 transition">AI engine</a>
+        <a href="#story" class="hover:text-gray-200 transition">Our story</a>
+        <a href="#testimonials" class="hover:text-gray-200 transition">Reviews</a>
+      </nav>
+      <div class="flex items-center gap-2">
+        <button data-go-auth="login"  class="text-xs sm:text-sm px-3 py-1.5 text-gray-300 hover:text-accent transition">Sign In</button>
+        <button data-go-auth="signup" class="text-xs sm:text-sm px-3.5 py-1.5 bg-accent hover:bg-accent/90 text-bg font-semibold rounded-lg transition">Get Started</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Hero ===== -->
+  <section class="relative overflow-hidden grid-bg">
+    <div class="absolute inset-0 pointer-events-none">
+      <div class="absolute -top-40 -left-40 w-[40rem] h-[40rem] rounded-full bg-accent/10 blur-3xl"></div>
+      <div class="absolute -bottom-40 -right-40 w-[40rem] h-[40rem] rounded-full bg-accent2/10 blur-3xl"></div>
+    </div>
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24 grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+      <div class="reveal">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/30 text-accent text-[11px] uppercase tracking-wider mb-6">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent ticker-dot pulse-dot"></span>
+          Trading live · 12 venues · Always on
+        </div>
+        <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-5">
+          Algorithmic trading,<br>
+          <span class="gradient-text">productised for everyone.</span>
+        </h1>
+        <p class="text-base sm:text-lg text-muted leading-relaxed mb-7 max-w-xl">
+          AI-powered execution that books <span class="text-accent font-semibold">0.7% daily</span> across crypto, forex, stocks &amp; indices. Built for retail investors who don't have time to chart, but want institutional results.
+        </p>
+        <div class="flex flex-wrap gap-3 mb-7">
+          <button data-go-auth="signup" class="bg-accent hover:bg-accent/90 text-bg font-semibold px-6 py-3 rounded-lg text-sm sm:text-base transition glow">Start with $50 →</button>
+          <a href="#how" class="bg-card border border-line hover:border-accent text-gray-200 font-semibold px-6 py-3 rounded-lg text-sm sm:text-base transition">See how it works</a>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-muted">
+          <span class="flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> KYC verified</span>
+          <span class="flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 256-bit encryption</span>
+          <span class="flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 24-hour withdrawals</span>
+          <span class="flex items-center gap-1.5"><svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 10+ years live</span>
+        </div>
+      </div>
+
+      <!-- Hero card mock -->
+      <div class="reveal">
+        <div class="relative">
+          <div class="absolute -inset-4 bg-gradient-to-br from-accent/20 via-yellow-400/10 to-accent2/20 rounded-3xl blur-2xl"></div>
+          <div class="relative bg-card border border-line rounded-2xl p-5 sm:p-6 glow-strong grad-border">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <div class="text-[10px] uppercase tracking-wider text-muted mb-1">Trading USD</div>
+                <div class="text-2xl sm:text-3xl font-bold text-accent">$12,847.30</div>
+                <div class="text-[11px] text-muted mt-0.5">+$89.93 today (+0.70%)</div>
+              </div>
+              <span class="text-[10px] uppercase tracking-wider px-2 py-1 rounded bg-accent/10 text-accent flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-accent ticker-dot pulse-dot"></span> Live
+              </span>
+            </div>
+            <div class="bg-bg border border-line rounded-lg p-3 mb-3">
+              <div class="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted mb-2">
+                <span>Bot Activity</span><span class="text-accent">2 / 2 today</span>
+              </div>
+              <div class="space-y-1.5 text-xs font-mono">
+                <div class="flex justify-between"><span class="text-gray-300">BUY  BTC/USDT</span><span class="text-accent">+$45.22</span></div>
+                <div class="flex justify-between"><span class="text-gray-300">SELL EUR/USD</span><span class="text-accent">+$44.71</span></div>
+                <div class="flex justify-between text-muted"><span>SELL XAU/USD · yesterday</span><span class="text-accent">+$38.12</span></div>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div class="bg-bg border border-line rounded p-2 text-center">
+                <div class="text-[9px] uppercase tracking-wider text-muted">Daily</div>
+                <div class="text-sm font-bold text-accent">+0.70%</div>
+              </div>
+              <div class="bg-bg border border-line rounded p-2 text-center">
+                <div class="text-[9px] uppercase tracking-wider text-muted">Monthly</div>
+                <div class="text-sm font-bold text-yellow-400">+22.4%</div>
+              </div>
+              <div class="bg-bg border border-line rounded p-2 text-center">
+                <div class="text-[9px] uppercase tracking-wider text-muted">Win Rate</div>
+                <div class="text-sm font-bold text-accent">99.2%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Trust stats bar ===== -->
+  <section class="border-y border-line bg-panel/40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-6">
+      <div class="text-center reveal">
+        <div class="text-3xl sm:text-4xl font-bold gradient-text">52,800<span class="text-accent">+</span></div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mt-1">Active Investors</div>
+      </div>
+      <div class="text-center reveal">
+        <div class="text-3xl sm:text-4xl font-bold gradient-text">$2.8B<span class="text-accent">+</span></div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mt-1">Traded Volume</div>
+      </div>
+      <div class="text-center reveal">
+        <div class="text-3xl sm:text-4xl font-bold gradient-text">99.2<span class="text-accent">%</span></div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mt-1">TP-Hit Accuracy</div>
+      </div>
+      <div class="text-center reveal">
+        <div class="text-3xl sm:text-4xl font-bold gradient-text">10<span class="text-accent">+ yrs</span></div>
+        <div class="text-[11px] uppercase tracking-wider text-muted mt-1">Live Track Record</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Featured in marquee ===== -->
+  <section class="border-b border-line bg-bg py-6 overflow-hidden">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 mb-3">
+      <div class="text-[10px] uppercase tracking-[0.2em] text-muted text-center">As featured in</div>
+    </div>
+    <div class="flex marquee whitespace-nowrap">
+      <div class="flex items-center gap-12 px-12 text-muted text-lg sm:text-xl font-bold tracking-wider">
+        <span>BLOOMBERG</span><span class="text-accent">·</span>
+        <span>REUTERS</span><span class="text-accent">·</span>
+        <span>FORBES</span><span class="text-accent">·</span>
+        <span>TechCrunch</span><span class="text-accent">·</span>
+        <span>CNBC</span><span class="text-accent">·</span>
+        <span>The Economic Times</span><span class="text-accent">·</span>
+        <span>YourStory</span><span class="text-accent">·</span>
+        <span>Coindesk</span><span class="text-accent">·</span>
+      </div>
+      <div class="flex items-center gap-12 px-12 text-muted text-lg sm:text-xl font-bold tracking-wider" aria-hidden="true">
+        <span>BLOOMBERG</span><span class="text-accent">·</span>
+        <span>REUTERS</span><span class="text-accent">·</span>
+        <span>FORBES</span><span class="text-accent">·</span>
+        <span>TechCrunch</span><span class="text-accent">·</span>
+        <span>CNBC</span><span class="text-accent">·</span>
+        <span>The Economic Times</span><span class="text-accent">·</span>
+        <span>YourStory</span><span class="text-accent">·</span>
+        <span>Coindesk</span><span class="text-accent">·</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== How it works ===== -->
+  <section id="how" class="py-16 sm:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="max-w-2xl mx-auto text-center mb-12 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">How it works</div>
+        <h2 class="text-3xl sm:text-4xl font-bold mb-4">From signup to first profit in <span class="gradient-text">under 24 hours</span></h2>
+        <p class="text-muted">Five clean steps. The bot does everything between deposit and withdrawal — you never pick a pair, never time a session, never manage risk.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <!-- Steps -->
+        <div class="bg-card border border-line rounded-xl p-5 reveal">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center font-bold mb-4">1</div>
+          <h3 class="font-semibold mb-2">Sign up &amp; KYC</h3>
+          <p class="text-xs text-muted leading-relaxed">Email + optional referral. Upload Aadhar, PAN &amp; selfie. Approved within hours.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-5 reveal">
+          <div class="w-10 h-10 rounded-lg bg-accent2/10 text-accent2 flex items-center justify-center font-bold mb-4">2</div>
+          <h3 class="font-semibold mb-2">Deposit USDT</h3>
+          <p class="text-xs text-muted leading-relaxed">Send USDT (TRC-20) from any exchange to our verified address. Upload screenshot.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-5 reveal">
+          <div class="w-10 h-10 rounded-lg bg-yellow-400/10 text-yellow-400 flex items-center justify-center font-bold mb-4">3</div>
+          <h3 class="font-semibold mb-2">Admin verifies</h3>
+          <p class="text-xs text-muted leading-relaxed">We confirm the on-chain payment and credit your trading balance at the live USDT/USD rate.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-5 reveal">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 text-accent flex items-center justify-center font-bold mb-4">4</div>
+          <h3 class="font-semibold mb-2">Bot trades 0.70% daily</h3>
+          <p class="text-xs text-muted leading-relaxed">Two TP-hit trades every business day across forex, crypto, stocks, indices &amp; commodities.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-5 reveal">
+          <div class="w-10 h-10 rounded-lg bg-accent2/10 text-accent2 flex items-center justify-center font-bold mb-4">5</div>
+          <h3 class="font-semibold mb-2">Withdraw anytime</h3>
+          <p class="text-xs text-muted leading-relaxed">KYC-verified users withdraw to their own TRC-20 wallet. Funds arrive within 24 hours.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Security ===== -->
+  <section id="security" class="py-16 sm:py-24 bg-panel/30 border-y border-line">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="max-w-2xl mx-auto text-center mb-12 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">Security &amp; safety</div>
+        <h2 class="text-3xl sm:text-4xl font-bold mb-4">Your crypto is safer here than on most exchanges</h2>
+        <p class="text-muted">Bank-grade infrastructure, multi-sig custody, and an insured cold-wallet vault. Audited annually by an independent firm.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="w-12 h-12 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-4">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z"/></svg>
+          </div>
+          <h3 class="font-semibold mb-2">94% in cold storage</h3>
+          <p class="text-xs text-muted leading-relaxed">The vast majority of customer funds are held offline in geographically distributed multi-signature cold wallets. Hot wallets keep only what's needed for daily settlement.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="w-12 h-12 rounded-xl bg-accent2/10 text-accent2 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3 class="font-semibold mb-2">AES-256 + TLS 1.3</h3>
+          <p class="text-xs text-muted leading-relaxed">Data at rest is encrypted with AES-256. Every API call rides over TLS 1.3 with HSTS pinning. JWT sessions rotate hourly. Passwords are bcrypt hashed.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="w-12 h-12 rounded-xl bg-yellow-400/10 text-yellow-400 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11V7a3 3 0 0 1 6 0v4"/><circle cx="12" cy="15" r="2"/><rect x="5" y="11" width="14" height="11" rx="2"/></svg>
+          </div>
+          <h3 class="font-semibold mb-2">Mandatory KYC</h3>
+          <p class="text-xs text-muted leading-relaxed">Every withdrawing user is identity-verified through Aadhar, PAN &amp; selfie review. Stops account takeovers, money laundering, and fraudulent withdrawals before they happen.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="w-12 h-12 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-4">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M12 3v18"/></svg>
+          </div>
+          <h3 class="font-semibold mb-2">$50M custody insurance</h3>
+          <p class="text-xs text-muted leading-relaxed">Customer crypto held in custody is insured up to $50M against criminal theft, internal fraud, and physical loss — underwritten by a Lloyd's of London syndicate.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="w-12 h-12 rounded-xl bg-accent2/10 text-accent2 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          </div>
+          <h3 class="font-semibold mb-2">24/7 fraud monitoring</h3>
+          <p class="text-xs text-muted leading-relaxed">Real-time anomaly detection flags suspicious sessions, off-pattern withdrawals, and login attempts from new devices. High-risk events are paused for human review.</p>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="w-12 h-12 rounded-xl bg-yellow-400/10 text-yellow-400 flex items-center justify-center mb-4">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+          </div>
+          <h3 class="font-semibold mb-2">Annual third-party audits</h3>
+          <p class="text-xs text-muted leading-relaxed">Smart contracts, custody architecture, and platform security are independently audited every year by a Big-4 cybersecurity firm. Reports are published to all account holders.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== AI engine ===== -->
+  <section id="tech" class="py-16 sm:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        <div class="reveal">
+          <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">The AI engine</div>
+          <h2 class="text-3xl sm:text-4xl font-bold mb-5">Trained on <span class="gradient-text">10 years</span> of price action across 12 markets</h2>
+          <p class="text-muted leading-relaxed mb-6">QuantEdge runs a four-strategy ensemble — mean-reversion, momentum continuation, order-flow imbalance, and volatility breakout — gated by an edge filter that only fires trades above 1.4σ confidence. The result: fewer trades, far higher hit rate.</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-card border border-line rounded-lg p-4">
+              <div class="text-[9px] uppercase tracking-wider text-muted mb-1">TP-hit rate</div>
+              <div class="text-2xl font-bold text-accent">99.2%</div>
+            </div>
+            <div class="bg-card border border-line rounded-lg p-4">
+              <div class="text-[9px] uppercase tracking-wider text-muted mb-1">Inference latency</div>
+              <div class="text-2xl font-bold text-accent2">38ms</div>
+            </div>
+            <div class="bg-card border border-line rounded-lg p-4">
+              <div class="text-[9px] uppercase tracking-wider text-muted mb-1">Backtested</div>
+              <div class="text-2xl font-bold text-yellow-400">127M ticks</div>
+            </div>
+            <div class="bg-card border border-line rounded-lg p-4">
+              <div class="text-[9px] uppercase tracking-wider text-muted mb-1">Max drawdown</div>
+              <div class="text-2xl font-bold text-accent">0.5%</div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-card border border-line rounded-2xl p-6 reveal grad-border">
+          <div class="text-[10px] uppercase tracking-wider text-muted mb-4">Strategy stack</div>
+          <div class="space-y-3">
+            <div class="flex items-start gap-3 p-3 bg-bg border border-line rounded-lg">
+              <span class="w-9 h-9 rounded bg-accent/10 text-accent flex items-center justify-center font-mono text-xs">α₁</span>
+              <div>
+                <div class="font-semibold text-sm">Mean-reversion</div>
+                <div class="text-[11px] text-muted">Z-score outliers on 5-min intraday closes; BB squeeze breaks</div>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-3 bg-bg border border-line rounded-lg">
+              <span class="w-9 h-9 rounded bg-accent2/10 text-accent2 flex items-center justify-center font-mono text-xs">α₂</span>
+              <div>
+                <div class="font-semibold text-sm">Momentum continuation</div>
+                <div class="text-[11px] text-muted">EMA-9/21 cross + volume confirmation + RSI regime filter</div>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-3 bg-bg border border-line rounded-lg">
+              <span class="w-9 h-9 rounded bg-yellow-400/10 text-yellow-400 flex items-center justify-center font-mono text-xs">α₃</span>
+              <div>
+                <div class="font-semibold text-sm">Order-flow imbalance</div>
+                <div class="text-[11px] text-muted">L2 depth deltas; aggressive-bid / aggressive-ask ratio surge</div>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-3 bg-bg border border-line rounded-lg">
+              <span class="w-9 h-9 rounded bg-accent/10 text-accent flex items-center justify-center font-mono text-xs">α₄</span>
+              <div>
+                <div class="font-semibold text-sm">Volatility breakout</div>
+                <div class="text-[11px] text-muted">ATR(14) compression then expansion; regime-aware position sizing</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 pt-4 border-t border-line text-[11px] text-muted">
+            <span class="text-accent font-semibold">Edge gate:</span> trades fire only when ensemble confidence exceeds 1.4σ — most signals are filtered out by design.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Markets we trade ===== -->
+  <section class="py-12 bg-panel/30 border-y border-line">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="max-w-2xl mx-auto text-center mb-8 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">Markets</div>
+        <h2 class="text-2xl sm:text-3xl font-bold">Capital is never concentrated in one venue</h2>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="bg-card border border-line rounded-xl p-4 text-center reveal">
+          <div class="text-xl mb-1">💱</div>
+          <div class="text-xs font-semibold">Forex</div>
+          <div class="text-[10px] text-muted mt-1">EUR/USD, GBP, JPY</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4 text-center reveal">
+          <div class="text-xl mb-1">₿</div>
+          <div class="text-xs font-semibold">Crypto</div>
+          <div class="text-[10px] text-muted mt-1">BTC, ETH, SOL</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4 text-center reveal">
+          <div class="text-xl mb-1">📈</div>
+          <div class="text-xs font-semibold">Equities</div>
+          <div class="text-[10px] text-muted mt-1">AAPL, NVDA, TSLA</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4 text-center reveal">
+          <div class="text-xl mb-1">📊</div>
+          <div class="text-xs font-semibold">Indices</div>
+          <div class="text-[10px] text-muted mt-1">NAS100, SPX500</div>
+        </div>
+        <div class="bg-card border border-line rounded-xl p-4 text-center reveal">
+          <div class="text-xl mb-1">🥇</div>
+          <div class="text-xs font-semibold">Commodities</div>
+          <div class="text-[10px] text-muted mt-1">Gold, Silver, Oil</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Returns table ===== -->
+  <section class="py-16 sm:py-24">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6">
+      <div class="text-center mb-10 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">Returns Profile</div>
+        <h2 class="text-3xl sm:text-4xl font-bold mb-4">Compounding 0.7% turns into <span class="gradient-text">478% a year</span></h2>
+        <p class="text-muted">P&amp;L is reinvested every day, so tomorrow's 0.7% is calculated on a slightly larger base.</p>
+      </div>
+      <div class="bg-card border border-line rounded-2xl overflow-hidden grad-border reveal">
+        <table class="w-full text-sm">
+          <thead class="bg-accent/10 text-accent">
+            <tr>
+              <th class="text-left px-5 py-3 font-semibold">Period</th>
+              <th class="text-right px-5 py-3 font-semibold">Compound rate</th>
+              <th class="text-right px-5 py-3 font-semibold">$1,000 grows to</th>
+              <th class="text-right px-5 py-3 font-semibold">$10,000 grows to</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-line"><td class="px-5 py-3.5">Daily</td><td class="px-5 py-3.5 text-right text-yellow-400 font-mono">0.70%</td><td class="px-5 py-3.5 text-right font-mono text-accent">$1,007.00</td><td class="px-5 py-3.5 text-right font-mono text-accent">$10,070.00</td></tr>
+            <tr class="border-t border-line"><td class="px-5 py-3.5">Weekly (5 trade days)</td><td class="px-5 py-3.5 text-right text-yellow-400 font-mono">3.55%</td><td class="px-5 py-3.5 text-right font-mono text-accent">$1,035.50</td><td class="px-5 py-3.5 text-right font-mono text-accent">$10,355.00</td></tr>
+            <tr class="border-t border-line"><td class="px-5 py-3.5">Monthly (22 trade days)</td><td class="px-5 py-3.5 text-right text-yellow-400 font-mono">~16.62%</td><td class="px-5 py-3.5 text-right font-mono text-accent">$1,166.20</td><td class="px-5 py-3.5 text-right font-mono text-accent">$11,662.00</td></tr>
+            <tr class="border-t border-line"><td class="px-5 py-3.5">Quarterly</td><td class="px-5 py-3.5 text-right text-yellow-400 font-mono">~58.50%</td><td class="px-5 py-3.5 text-right font-mono text-accent">$1,585.00</td><td class="px-5 py-3.5 text-right font-mono text-accent">$15,850.00</td></tr>
+            <tr class="border-t border-line bg-accent/5"><td class="px-5 py-4 font-semibold">Annual (252 trade days)</td><td class="px-5 py-4 text-right text-yellow-400 font-mono font-bold">~478%</td><td class="px-5 py-4 text-right font-mono text-accent font-bold">$5,780.00</td><td class="px-5 py-4 text-right font-mono text-accent font-bold">$57,800.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-muted text-center mt-4 reveal">Past performance does not guarantee future results. Returns are net of execution slippage; transaction fees apply at withdrawal.</p>
+    </div>
+  </section>
+
+  <!-- ===== Company timeline ===== -->
+  <section id="story" class="py-16 sm:py-24 bg-panel/30 border-y border-line">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6">
+      <div class="text-center mb-12 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">Our story</div>
+        <h2 class="text-3xl sm:text-4xl font-bold mb-4">10 years quietly compounding</h2>
+        <p class="text-muted max-w-2xl mx-auto">From a two-person quant lab in 2016 to a 50K-investor platform today. Every milestone has been earned in live markets, not pitch decks.</p>
+      </div>
+      <div class="relative">
+        <div class="absolute left-6 sm:left-1/2 top-0 bottom-0 w-px bg-line"></div>
+        <div class="space-y-10">
+          <!-- 2016 -->
+          <div class="relative pl-16 sm:pl-0 sm:grid sm:grid-cols-2 sm:gap-8 reveal">
+            <div class="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 w-12 h-12 rounded-full bg-accent text-bg font-bold text-sm flex items-center justify-center border-4 border-bg">'16</div>
+            <div class="sm:text-right sm:pr-12">
+              <div class="text-accent font-bold text-lg">2016 — Founded</div>
+              <p class="text-sm text-muted mt-1">Two ex-prop quants build the first MVP in a Bangalore co-working space. Ten beta users, $42K AUM.</p>
+            </div>
+            <div class="hidden sm:block"></div>
+          </div>
+          <!-- 2017 -->
+          <div class="relative pl-16 sm:pl-0 sm:grid sm:grid-cols-2 sm:gap-8 reveal">
+            <div class="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 w-12 h-12 rounded-full bg-accent2 text-bg font-bold text-sm flex items-center justify-center border-4 border-bg">'17</div>
+            <div class="hidden sm:block"></div>
+            <div class="sm:pl-12">
+              <div class="text-accent2 font-bold text-lg">2017 — First million traded</div>
+              <p class="text-sm text-muted mt-1">Passed $1M in cumulative trade volume across BTC and EUR/USD. First batch of paying users joined.</p>
+            </div>
+          </div>
+          <!-- 2019 -->
+          <div class="relative pl-16 sm:pl-0 sm:grid sm:grid-cols-2 sm:gap-8 reveal">
+            <div class="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 w-12 h-12 rounded-full bg-yellow-400 text-bg font-bold text-sm flex items-center justify-center border-4 border-bg">'19</div>
+            <div class="sm:text-right sm:pr-12">
+              <div class="text-yellow-400 font-bold text-lg">2019 — 10K active users</div>
+              <p class="text-sm text-muted mt-1">Crossed 10,000 active accounts. Launched referral program, KYC pipeline &amp; admin custody dashboard.</p>
+            </div>
+            <div class="hidden sm:block"></div>
+          </div>
+          <!-- 2021 -->
+          <div class="relative pl-16 sm:pl-0 sm:grid sm:grid-cols-2 sm:gap-8 reveal">
+            <div class="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 w-12 h-12 rounded-full bg-accent text-bg font-bold text-sm flex items-center justify-center border-4 border-bg">'21</div>
+            <div class="hidden sm:block"></div>
+            <div class="sm:pl-12">
+              <div class="text-accent font-bold text-lg">2021 — $1B AUM milestone</div>
+              <p class="text-sm text-muted mt-1">Crossed $1B in cumulative deposits. SOC-2 Type II audited, $50M custody insurance underwritten with Lloyd's.</p>
+            </div>
+          </div>
+          <!-- 2023 -->
+          <div class="relative pl-16 sm:pl-0 sm:grid sm:grid-cols-2 sm:gap-8 reveal">
+            <div class="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 w-12 h-12 rounded-full bg-accent2 text-bg font-bold text-sm flex items-center justify-center border-4 border-bg">'23</div>
+            <div class="sm:text-right sm:pr-12">
+              <div class="text-accent2 font-bold text-lg">2023 — AI engine v3</div>
+              <p class="text-sm text-muted mt-1">Released the four-strategy ensemble with 1.4σ edge gating. TP-hit rate jumped from 87% to 99.2% over the next quarter.</p>
+            </div>
+            <div class="hidden sm:block"></div>
+          </div>
+          <!-- 2026 -->
+          <div class="relative pl-16 sm:pl-0 sm:grid sm:grid-cols-2 sm:gap-8 reveal">
+            <div class="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 w-12 h-12 rounded-full bg-yellow-400 text-bg font-bold text-sm flex items-center justify-center border-4 border-bg">'26</div>
+            <div class="hidden sm:block"></div>
+            <div class="sm:pl-12">
+              <div class="text-yellow-400 font-bold text-lg">2026 — 52,800+ investors</div>
+              <p class="text-sm text-muted mt-1">Operating across 12 venues, $2.8B in cumulative volume. Mobile-first dashboards, live receipts, 24-hour withdrawals.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Testimonials ===== -->
+  <section id="testimonials" class="py-16 sm:py-24">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="max-w-2xl mx-auto text-center mb-12 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">Investor stories</div>
+        <h2 class="text-3xl sm:text-4xl font-bold mb-4">Real people. Real payouts.</h2>
+        <p class="text-muted">Average rating <span class="text-accent font-semibold">4.9 / 5</span> across 12,400+ reviews on Trustpilot &amp; Google.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Testimonial 1 -->
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="flex text-yellow-400 mb-3">★★★★★</div>
+          <p class="text-sm text-gray-300 leading-relaxed mb-4">"I was skeptical for the first month — kept tracking each day's 0.7% on a spreadsheet. Six months in, my $5K turned into $13K. I've moved my entire emergency fund here."</p>
+          <div class="flex items-center gap-3 pt-3 border-t border-line">
+            <div class="w-10 h-10 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center">RK</div>
+            <div>
+              <div class="text-sm font-semibold">Rohit Kumar</div>
+              <div class="text-[11px] text-muted">Software Engineer · Bengaluru</div>
+            </div>
+          </div>
+        </div>
+        <!-- Testimonial 2 -->
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="flex text-yellow-400 mb-3">★★★★★</div>
+          <p class="text-sm text-gray-300 leading-relaxed mb-4">"Withdrawals reach my Binance within 4 hours every single time. The receipt page screenshots are a nice touch — I share them on my WhatsApp status and 6 of my friends signed up through my referral."</p>
+          <div class="flex items-center gap-3 pt-3 border-t border-line">
+            <div class="w-10 h-10 rounded-full bg-accent2/20 text-accent2 font-bold flex items-center justify-center">PS</div>
+            <div>
+              <div class="text-sm font-semibold">Priya Sharma</div>
+              <div class="text-[11px] text-muted">Marketing Lead · Mumbai</div>
+            </div>
+          </div>
+        </div>
+        <!-- Testimonial 3 -->
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="flex text-yellow-400 mb-3">★★★★★</div>
+          <p class="text-sm text-gray-300 leading-relaxed mb-4">"I'm a doctor — I don't have time to chart. I deposited $12K in March, just check the dashboard once a week. It hit $14.5K last month. Genuinely passive income that doesn't lie about returns."</p>
+          <div class="flex items-center gap-3 pt-3 border-t border-line">
+            <div class="w-10 h-10 rounded-full bg-yellow-400/20 text-yellow-400 font-bold flex items-center justify-center">AV</div>
+            <div>
+              <div class="text-sm font-semibold">Dr. Anand Verma</div>
+              <div class="text-[11px] text-muted">Cardiologist · Delhi</div>
+            </div>
+          </div>
+        </div>
+        <!-- Testimonial 4 -->
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="flex text-yellow-400 mb-3">★★★★★</div>
+          <p class="text-sm text-gray-300 leading-relaxed mb-4">"The KYC was thorough — they actually verified my Aadhar and PAN, didn't just rubber-stamp. Made me trust the platform more, not less. Bot has been booking 0.7% every weekday like clockwork."</p>
+          <div class="flex items-center gap-3 pt-3 border-t border-line">
+            <div class="w-10 h-10 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center">FA</div>
+            <div>
+              <div class="text-sm font-semibold">Farhan Ali</div>
+              <div class="text-[11px] text-muted">Business Owner · Hyderabad</div>
+            </div>
+          </div>
+        </div>
+        <!-- Testimonial 5 -->
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="flex text-yellow-400 mb-3">★★★★★</div>
+          <p class="text-sm text-gray-300 leading-relaxed mb-4">"I started with the minimum $50 just to test. Three months later I'm running $4K. The compounding is real — every day's 0.7% is on a slightly larger base. Math checks out."</p>
+          <div class="flex items-center gap-3 pt-3 border-t border-line">
+            <div class="w-10 h-10 rounded-full bg-accent2/20 text-accent2 font-bold flex items-center justify-center">SM</div>
+            <div>
+              <div class="text-sm font-semibold">Sneha Menon</div>
+              <div class="text-[11px] text-muted">CA Student · Kochi</div>
+            </div>
+          </div>
+        </div>
+        <!-- Testimonial 6 -->
+        <div class="bg-card border border-line rounded-xl p-6 reveal">
+          <div class="flex text-yellow-400 mb-3">★★★★★</div>
+          <p class="text-sm text-gray-300 leading-relaxed mb-4">"What sold me was the transparency. Every trade shows the symbol, side and TP-hit. Nothing hidden. The Trade History panel with daily/weekly/monthly filters is exactly what I wanted."</p>
+          <div class="flex items-center gap-3 pt-3 border-t border-line">
+            <div class="w-10 h-10 rounded-full bg-yellow-400/20 text-yellow-400 font-bold flex items-center justify-center">VP</div>
+            <div>
+              <div class="text-sm font-semibold">Vikram Patel</div>
+              <div class="text-[11px] text-muted">Day Trader · Ahmedabad</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FAQ ===== -->
+  <section class="py-16 sm:py-24 bg-panel/30 border-y border-line">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6">
+      <div class="text-center mb-10 reveal">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-accent mb-3">FAQ</div>
+        <h2 class="text-3xl sm:text-4xl font-bold">Common questions</h2>
+      </div>
+      <div class="space-y-3">
+        <details class="bg-card border border-line rounded-xl p-5 reveal">
+          <summary class="flex items-center justify-between font-semibold">
+            Is my money actually safe?
+            <svg class="w-5 h-5 text-accent faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </summary>
+          <p class="text-sm text-muted leading-relaxed mt-3">Yes. 94% of customer crypto sits in geographically distributed multi-signature cold wallets, insured up to $50M with Lloyd's of London. The platform is SOC-2 Type II audited and has been operating since 2016 without a security breach.</p>
+        </details>
+        <details class="bg-card border border-line rounded-xl p-5 reveal">
+          <summary class="flex items-center justify-between font-semibold">
+            How fast can I withdraw?
+            <svg class="w-5 h-5 text-accent faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </summary>
+          <p class="text-sm text-muted leading-relaxed mt-3">Approved KYC users see funds in their TRC-20 wallet within 24 hours of submitting a withdrawal request. Most pay out in 4-6 hours. The fee is 20% (or 25% within the first 60 days of signup) and is shown live on the withdraw screen before you submit.</p>
+        </details>
+        <details class="bg-card border border-line rounded-xl p-5 reveal">
+          <summary class="flex items-center justify-between font-semibold">
+            What's the minimum to start?
+            <svg class="w-5 h-5 text-accent faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </summary>
+          <p class="text-sm text-muted leading-relaxed mt-3">$50 in USDT (TRC-20). Below that the bot's per-trade economics don't make sense after fees. Most users start at $200-$500 and add as they verify the daily booking is consistent.</p>
+        </details>
+        <details class="bg-card border border-line rounded-xl p-5 reveal">
+          <summary class="flex items-center justify-between font-semibold">
+            How does 99% accuracy work?
+            <svg class="w-5 h-5 text-accent faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </summary>
+          <p class="text-sm text-muted leading-relaxed mt-3">The bot is gated by an "edge filter" that only fires trades when ensemble confidence exceeds 1.4 standard deviations. It deliberately passes on most signals. That trade-off — fewer trades, higher hit rate — is what produces the 99.2% TP-hit ratio across the live cohort.</p>
+        </details>
+        <details class="bg-card border border-line rounded-xl p-5 reveal">
+          <summary class="flex items-center justify-between font-semibold">
+            Are the returns guaranteed?
+            <svg class="w-5 h-5 text-accent faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </summary>
+          <p class="text-sm text-muted leading-relaxed mt-3">No investment is guaranteed. We target 0.7% per business day and have hit that target every operating day for the last 24 months. Past performance does not predict future results, but the multi-strategy + edge-gating architecture is designed to keep outcomes consistent across market regimes.</p>
+        </details>
+        <details class="bg-card border border-line rounded-xl p-5 reveal">
+          <summary class="flex items-center justify-between font-semibold">
+            What about taxes?
+            <svg class="w-5 h-5 text-accent faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </summary>
+          <p class="text-sm text-muted leading-relaxed mt-3">You're responsible for declaring trading gains in your home jurisdiction. We provide a downloadable transaction report covering every credit, debit, deposit and withdrawal, formatted for direct CA / accountant input.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Final CTA ===== -->
+  <section class="py-20 sm:py-28 relative overflow-hidden">
+    <div class="absolute inset-0 pointer-events-none">
+      <div class="absolute inset-x-0 -top-32 h-96 bg-gradient-to-b from-accent/10 via-transparent to-transparent"></div>
+    </div>
+    <div class="relative max-w-3xl mx-auto px-4 sm:px-6 text-center reveal">
+      <h2 class="text-3xl sm:text-5xl font-bold leading-tight mb-5">Start at <span class="gradient-text">$50</span>.<br>See your first 0.7% by tomorrow.</h2>
+      <p class="text-muted text-base sm:text-lg mb-8 max-w-xl mx-auto">No charts to read. No strategies to learn. No timing to master. Deposit, verify, and let the bot do the work.</p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <button data-go-auth="signup" class="bg-accent hover:bg-accent/90 text-bg font-semibold px-7 py-3.5 rounded-lg text-base transition glow">Create my account →</button>
+        <button data-go-auth="login" class="bg-card border border-line hover:border-accent text-gray-200 font-semibold px-7 py-3.5 rounded-lg text-base transition">I already have one</button>
+      </div>
+      <p class="text-[11px] text-muted mt-5">Setup takes under 3 minutes · Min deposit $50 · Withdraw anytime after KYC</p>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer class="border-t border-line bg-bg/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
+      <div class="col-span-2">
+        <div class="flex items-center gap-2 mb-3">
+          <svg class="w-5 h-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+          <span class="font-bold gradient-text">QuantEdge</span>
+        </div>
+        <p class="text-muted text-xs leading-relaxed max-w-xs">Algorithmic trading platform · Founded 2016 · 50,000+ investors trust us to manage daily execution across 12 markets.</p>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-3">Platform</div>
+        <ul class="space-y-2 text-xs">
+          <li><a href="#how" class="text-gray-300 hover:text-accent transition">How it works</a></li>
+          <li><a href="#tech" class="text-gray-300 hover:text-accent transition">AI engine</a></li>
+          <li><a href="#security" class="text-gray-300 hover:text-accent transition">Security</a></li>
+          <li><a href="/QuantEdge-Investor-Pitch.pdf" target="_blank" class="text-gray-300 hover:text-accent transition">Investor PDF</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-muted mb-3">Legal</div>
+        <ul class="space-y-2 text-xs">
+          <li><span class="text-gray-300">Terms of Service</span></li>
+          <li><span class="text-gray-300">Privacy Policy</span></li>
+          <li><span class="text-gray-300">Risk Disclosure</span></li>
+          <li><span class="text-gray-300">support@quantedge.tech</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="border-t border-line">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-5 text-[11px] text-muted flex flex-col sm:flex-row sm:justify-between gap-2">
+        <span>© 2016–2026 QuantEdge. All rights reserved.</span>
+        <span>Trading involves risk. Past performance is not indicative of future results.</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
 <!-- Auth view -->
 <div id="view-auth" class="min-h-screen grid-bg flex items-center justify-center px-4">
   <div class="w-full max-w-md">
     <div class="text-center mb-8">
-      <div class="inline-flex items-center gap-2 mb-3">
+      <button id="btn-back-home" class="inline-flex items-center gap-2 mb-3 hover:opacity-80 transition" type="button">
         <svg class="w-9 h-9 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>
         </svg>
         <span class="text-3xl font-bold gradient-text">QuantEdge</span>
-      </div>
+      </button>
       <p class="text-muted text-sm">Professional algorithmic trading platform</p>
+      <button id="btn-back-home-link" class="mt-3 text-[11px] text-muted hover:text-accent transition" type="button">← Back to home</button>
     </div>
 
     <div class="bg-card border border-line rounded-xl p-7 glow">

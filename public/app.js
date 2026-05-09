@@ -75,11 +75,57 @@ function fmt6(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 }
 function show(viewId) {
-  ['view-auth', 'view-dashboard', 'view-admin', 'view-receipt'].forEach(id => {
+  ['view-landing', 'view-auth', 'view-dashboard', 'view-admin', 'view-receipt'].forEach(id => {
     const el = $(id); if (el) el.classList.add('hidden');
   });
   const tgt = $(viewId); if (tgt) tgt.classList.remove('hidden');
+  if (viewId === 'view-landing') {
+    setTimeout(armRevealObserver, 50);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
 }
+
+// Reveal-on-scroll for the landing page (.reveal elements fade up when in view).
+let revealObserver = null;
+function armRevealObserver() {
+  if (!('IntersectionObserver' in window)) {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+    return;
+  }
+  if (revealObserver) revealObserver.disconnect();
+  revealObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        revealObserver.unobserve(e.target);
+      }
+    }
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal:not(.in)').forEach(el => revealObserver.observe(el));
+}
+
+// Landing CTA buttons (data-go-auth) and "Back to home" links.
+document.addEventListener('click', (e) => {
+  const btn = e.target?.closest?.('[data-go-auth]');
+  if (btn) {
+    const tab = btn.dataset.goAuth || 'login';
+    show('view-auth');
+    document.querySelectorAll('.auth-tab').forEach(b => {
+      const active = b.dataset.tab === tab;
+      b.classList.toggle('border-accent', active);
+      b.classList.toggle('text-accent', active);
+      b.classList.toggle('border-transparent', !active);
+      b.classList.toggle('text-muted', !active);
+    });
+    const loginForm = $('form-login'), signupForm = $('form-signup');
+    if (loginForm) loginForm.classList.toggle('hidden', tab !== 'login');
+    if (signupForm) signupForm.classList.toggle('hidden', tab !== 'signup');
+    return;
+  }
+  if (e.target?.id === 'btn-back-home' || e.target?.id === 'btn-back-home-link' || e.target?.closest?.('#btn-back-home')) {
+    show('view-landing');
+  }
+});
 
 // ---------- Auth tab toggle ----------
 document.querySelectorAll('.auth-tab').forEach(btn => {
@@ -140,13 +186,13 @@ $('btn-logout-admin').addEventListener('click', logout);
 function logout() {
   if (typeof stopDashboardPolling === 'function') stopDashboardPolling();
   API.clear();
-  show('view-auth');
+  show('view-landing');
 }
 
 // ---------- Routing ----------
 function routeAfterAuth() {
   const u = API.user();
-  if (!u) return show('view-auth');
+  if (!u) return show('view-landing');
   if (u.is_admin) {
     show('view-admin');
     loadAdmin();
@@ -2082,6 +2128,6 @@ function escapeHtml(s) {
   if (u && API.token()) {
     routeAfterAuth();
   } else {
-    show('view-auth');
+    show('view-landing');
   }
 })();
