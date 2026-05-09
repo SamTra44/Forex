@@ -765,13 +765,15 @@
           <input type="email" name="email" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="you@example.com" />
         </div>
         <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="text-xs uppercase tracking-wider text-muted">Password</label>
-            <button type="button" id="btn-open-forgot" class="text-[11px] text-accent hover:underline">Forgot password?</button>
-          </div>
+          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Password</label>
           <input type="password" name="password" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="••••••••" />
         </div>
         <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Sign In</button>
+        <button type="button" id="btn-open-forgot" class="w-full bg-bg border border-line hover:border-yellow-400 text-yellow-400 font-medium py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11V7a3 3 0 0 1 6 0v4"/><circle cx="12" cy="15" r="2"/><rect x="5" y="11" width="14" height="11" rx="2"/></svg>
+          Forgot password? Reset it now
+        </button>
+        <p class="text-[10px] text-muted text-center leading-relaxed">Self-serve reset using your registered email + KYC mobile · No support ticket needed</p>
       </form>
 
       <!-- Signup form -->
