@@ -2126,15 +2126,38 @@ document.addEventListener('change', (e) => {
   if (e.target && e.target.id === 'kyc-filter') loadAdminKyc();
 });
 
-// ---------- Forgot password (user) + Admin reset-password ----------
+// ---------- Forgot password (self-serve) + Change password + Admin reset ----------
+function resetForgotModal() {
+  $('form-forgot')?.reset();
+  $('forgot-error')?.classList.add('hidden');
+  $('forgot-step-input')?.classList.remove('hidden');
+  $('forgot-step-success')?.classList.add('hidden');
+  setText('forgot-new-pwd', '—');
+}
+
 document.addEventListener('click', (e) => {
   if (!e.target) return;
   if (e.target.id === 'btn-open-forgot') {
-    $('form-forgot').reset();
-    $('forgot-result')?.classList.add('hidden');
+    resetForgotModal();
     $('modal-forgot').classList.remove('hidden');
   }
-  if (e.target.id === 'btn-forgot-cancel') $('modal-forgot').classList.add('hidden');
+  if (e.target.id === 'btn-forgot-cancel' || e.target.id === 'btn-forgot-done') {
+    $('modal-forgot').classList.add('hidden');
+  }
+  if (e.target.id === 'btn-forgot-copy') {
+    const pwd = $('forgot-new-pwd')?.textContent || '';
+    if (!pwd || pwd === '—') return;
+    navigator.clipboard.writeText(pwd)
+      .then(() => toast('Password copied', 'success'))
+      .catch(() => toast('Copy failed', 'error'));
+  }
+  if (e.target.id === 'btn-open-change-pwd') {
+    $('form-change-pwd')?.reset();
+    $('modal-change-pwd').classList.remove('hidden');
+  }
+  if (e.target.id === 'btn-change-pwd-cancel') {
+    $('modal-change-pwd').classList.add('hidden');
+  }
   if (e.target.id === 'btn-reset-pwd-close') $('modal-reset-pwd').classList.add('hidden');
   if (e.target.id === 'btn-reset-pwd-copy') {
     const pwd = $('reset-pwd-value')?.textContent || '';
@@ -2150,14 +2173,46 @@ document.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     try {
-      const r = await API.req('/api/auth/forgot-password', {
+      const r = await API.req('/api/auth/self-reset-password', {
         method: 'POST',
-        body: JSON.stringify({ email: fd.get('email') }),
+        body: JSON.stringify({
+          email: fd.get('email'),
+          mobile_number: fd.get('mobile_number'),
+        }),
       });
-      const out = $('forgot-result');
-      out.classList.remove('hidden');
-      out.textContent = r.message || 'Request submitted — support will reach out shortly.';
-    } catch (err) { toast(err.message, 'error'); }
+      // Switch the modal to the success step
+      $('forgot-step-input').classList.add('hidden');
+      $('forgot-step-success').classList.remove('hidden');
+      setText('forgot-new-pwd', r.new_password);
+    } catch (err) {
+      const out = $('forgot-error');
+      if (out) {
+        out.classList.remove('hidden');
+        out.textContent = err.message || 'Verification failed';
+      }
+    }
+    return;
+  }
+  if (e.target?.id === 'form-change-pwd') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const next = String(fd.get('new_password') || '');
+    const confirm = String(fd.get('confirm_password') || '');
+    if (next !== confirm) return toast('New password and confirm don\'t match', 'error');
+    try {
+      await API.req('/api/me/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: fd.get('current_password'),
+          new_password: next,
+        }),
+      });
+      $('modal-change-pwd').classList.add('hidden');
+      toast('Password updated successfully', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    return;
   }
 });
 

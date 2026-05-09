@@ -1181,21 +1181,65 @@ app.post('/api/admin/users/:id/reset-password', authRequired, adminRequired, (re
   });
 });
 
-// ---------- Forgot password (placeholder, no SMTP yet) ----------
-// Logs the request and returns a generic message so we never leak which
-// emails are registered. When SMTP is wired we can swap this to send a
-// reset link/OTP without changing the API shape.
+// ---------- Self-serve password reset (no email/SMTP needed) ----------
+// Identity proof: registered email + KYC-verified mobile number must both match.
+// Works only after KYC submission (mobile_number is set). New password is
+// returned ONCE — user signs in and can change it from their profile.
+app.post('/api/auth/self-reset-password', (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const mobileRaw = String(req.body?.mobile_number || '').trim();
+  const mobile = mobileRaw.replace(/[\s\-()]/g, '');
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'valid email required' });
+  if (!/^\+?\d{6,20}$/.test(mobile)) return res.status(400).json({ error: 'valid mobile number required' });
+
+  const user = db.prepare('SELECT id, email, mobile_number, kyc_status FROM users WHERE email = ?').get(email);
+  // Same response shape on every failure path so we don't leak which emails exist.
+  const fail = () => res.status(400).json({
+    error: 'Verification failed — your email and mobile must match your KYC records. If you can\'t recall your KYC mobile, contact support@quantedge.tech.',
+  });
+  if (!user || !user.mobile_number) return fail();
+  // Tolerate non-significant differences (spaces, brackets, dashes already stripped).
+  const stored = String(user.mobile_number).replace(/[\s\-()]/g, '');
+  if (stored !== mobile) return fail();
+
+  const newPassword = crypto.randomBytes(10).toString('base64').replace(/[+/=]/g, '').slice(0, 10);
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  console.log(`[self-reset] user_id=${user.id} email=${email} reset OK`);
+  res.json({
+    ok: true,
+    new_password: newPassword,
+    note: 'Sign in with this password and change it from your profile.',
+  });
+});
+
+// ---------- Change password (for logged-in users) ----------
+app.post('/api/me/change-password', authRequired, (req, res) => {
+  const current = String(req.body?.current_password || '');
+  const next = String(req.body?.new_password || '');
+  if (next.length < 6) return res.status(400).json({ error: 'new password must be at least 6 characters' });
+  if (next === current) return res.status(400).json({ error: 'new password must differ from current' });
+  const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  if (!bcrypt.compareSync(current, u.password_hash)) {
+    return res.status(401).json({ error: 'current password is incorrect' });
+  }
+  const hash = bcrypt.hashSync(next, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
+  res.json({ ok: true });
+});
+
+// Legacy support-ticket forgot-password (kept for backward compatibility,
+// in case some old client still calls it). Always returns a generic message.
 app.post('/api/auth/forgot-password', (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   if (email && email.includes('@')) {
-    const user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email);
-    if (user) {
-      console.log(`[forgot-password] request for user_id=${user.id} email=${email}`);
-    }
+    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    if (user) console.log(`[forgot-password] support request for user_id=${user.id} email=${email}`);
   }
   res.json({
     ok: true,
-    message: `If an account is registered with that email, ${COMPANY_NAME} support will reach out via your KYC-registered mobile within 24 hours. You can also email support@quantedge.tech with your registered email and mobile number.`,
+    message: `If an account is registered with that email, ${COMPANY_NAME} support will reach out via your KYC-registered mobile within 24 hours.`,
   });
 });
 
