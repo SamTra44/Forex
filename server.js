@@ -877,56 +877,6 @@ app.get('/api/admin/stats', authRequired, adminRequired, (req, res) => {
   });
 });
 
-// ---------- Admin · Force-book today's 0.7% for all users ----------
-// One-shot endpoint that books today's 0.7% target right now for every active
-// non-admin user, regardless of slot timing. Idempotent: if a user already
-// has today's bot trades, they're refunded and re-booked so the daily P&L
-// always equals exactly target.
-app.post('/api/admin/bot/force-book-today', authRequired, adminRequired, (_req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const users = db.prepare(`
-    SELECT id, balance, daily_pnl, daily_pnl_date
-    FROM users WHERE bot_active = 1 AND is_admin = 0 AND balance > 0.5
-  `).all();
-
-  const insertTx = db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bot_trade', ?, ?)`);
-  const refundBal = db.prepare(`UPDATE users SET balance = balance - ? WHERE id = ?`);
-  const deleteToday = db.prepare(`DELETE FROM transactions WHERE user_id = ? AND type = 'bot_trade' AND date(created_at) = date('now')`);
-  const finalize = db.prepare(`UPDATE users SET balance = balance + ?, daily_pnl = ?, daily_trade_count = ?, daily_pnl_date = ? WHERE id = ?`);
-
-  let booked = 0, totalPnl = 0;
-  withTransaction(() => {
-    for (const u of users) {
-      // Effective start is current balance minus today's prior booking (if any),
-      // so re-running this endpoint never compounds the bot on top of itself.
-      const todaysPnl = (u.daily_pnl_date === today) ? Number(u.daily_pnl) : 0;
-      const start = Math.max(1, Number(u.balance) - todaysPnl);
-      const target = +(start * PROFIT_DAY_PCT).toFixed(2);
-      if (target < BOT_MIN_PNL) continue;
-
-      // Wipe today's old bot trades + refund their P&L from balance, then re-book fresh.
-      if (todaysPnl !== 0) {
-        refundBal.run(todaysPnl, u.id);
-        deleteToday.run(u.id);
-      }
-
-      const portion = 0.40 + Math.random() * 0.20;
-      const t1 = +(target * portion).toFixed(2);
-      const t2 = +(target - t1).toFixed(2);
-      for (const pnl of [t1, t2]) {
-        const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-        const side = Math.random() < 0.5 ? 'BUY' : 'SELL';
-        insertTx.run(u.id, pnl, `${side} ${symbol} TP hit`);
-      }
-      finalize.run(target, target, TRADES_PER_DAY, today, u.id);
-      booked++;
-      totalPnl += target;
-    }
-  });
-
-  res.json({ ok: true, users_booked: booked, total_pnl: +totalPnl.toFixed(2), date: today });
-});
-
 // ---------- Admin · Deposit address config ----------
 app.get('/api/admin/config/deposit-address', authRequired, adminRequired, (_req, res) => {
   res.json({
@@ -997,7 +947,7 @@ app.post('/api/admin/deposits/:id/approve', authRequired, adminRequired, (req, r
     db.prepare(`
       INSERT INTO transactions (user_id, type, amount, note)
       VALUES (?, 'deposit', ?, ?)
-    `).run(dep.user_id, usd, `Approved deposit · ${Number(dep.amount_usdt).toFixed(6)} USDT @ $${price.toFixed(4)}` + (dep.txid ? ` · TXID ${String(dep.txid).slice(0, 12)}…` : ''));
+    `).run(dep.user_id, usd, `Deposit credited by ${COMPANY_NAME} · ${Number(dep.amount_usdt).toFixed(6)} USDT @ $${price.toFixed(4)}`);
     db.prepare(`
       UPDATE deposit_requests
       SET status = 'approved', reviewed_at = datetime('now'), reviewer_email = ?, credited_usd = ?
@@ -1083,7 +1033,7 @@ app.post('/api/admin/withdrawals-ext/:id/reject', authRequired, adminRequired, (
     db.prepare(`
       INSERT INTO transactions (user_id, type, amount, note)
       VALUES (?, 'admin_credit', ?, ?)
-    `).run(w.user_id, w.gross_usd, `Refund · withdrawal rejected (${reason})`);
+    `).run(w.user_id, w.gross_usd, `Refund by ${COMPANY_NAME} · withdrawal rejected`);
   });
   res.json({ ok: true });
 });
@@ -1128,8 +1078,8 @@ app.post('/api/admin/users/:id/credit-bonus', authRequired, adminRequired, (req,
   if (newBal < -1e-9) return res.status(400).json({ error: 'cannot debit below 0' });
   const usd = +Number(amount).toFixed(2);
   const note = req.body?.note || (amount > 0
-    ? `Joining-bonus credit by ${req.user.email}`
-    : `Joining-bonus debit by ${req.user.email}`);
+    ? `Joining bonus credited by ${COMPANY_NAME}`
+    : `Joining bonus adjusted by ${COMPANY_NAME}`);
   withTransaction(() => {
     db.prepare('UPDATE users SET bonus_balance = bonus_balance + ? WHERE id = ?').run(usd, userId);
     db.prepare(`INSERT INTO transactions (user_id, type, amount, note) VALUES (?, 'bonus_credit', ?, ?)`)
@@ -1154,8 +1104,8 @@ app.post('/api/admin/users/:id/credit-usdt', authRequired, adminRequired, (req, 
   if (newBal < -1e-9) return res.status(400).json({ error: 'cannot debit below 0' });
 
   const note = req.body?.note || (amount > 0
-    ? `USDT credit by ${req.user.email}`
-    : `USDT debit by ${req.user.email}`);
+    ? `USDT credited by ${COMPANY_NAME}`
+    : `USDT adjusted by ${COMPANY_NAME}`);
   const usdt = +Number(amount).toFixed(6);
 
   withTransaction(() => {
@@ -1187,12 +1137,9 @@ app.post('/api/admin/users/:id/credit', authRequired, adminRequired, (req, res) 
   const txType = asDeposit ? 'deposit' : 'admin_credit';
   let note = req.body?.note;
   if (asDeposit) {
-    const txid = req.body?.txid ? String(req.body.txid).trim() : null;
-    note = note || (txid
-      ? `On-chain deposit · TXID ${txid.slice(0, 12)}...${txid.slice(-6)}`
-      : `Deposit confirmed`);
+    note = note || `Deposit credited by ${COMPANY_NAME}`;
   } else {
-    note = note || `Admin credit by ${req.user.email}`;
+    note = note || `Credit added by ${COMPANY_NAME}`;
   }
 
   let bonusEvents = null;
@@ -1212,6 +1159,44 @@ app.post('/api/admin/users/:id/credit', authRequired, adminRequired, (req, res) 
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   res.json({ user: publicUser(updated), referral_bonuses: bonusEvents });
+});
+
+// ---------- Admin · Reset user password ----------
+// Generates a fresh temporary password, hashes & saves it, and returns
+// the plaintext to the admin ONCE so they can deliver it to the user
+// out-of-band (WhatsApp / phone / SMS to the KYC-registered number).
+app.post('/api/admin/users/:id/reset-password', authRequired, adminRequired, (req, res) => {
+  const userId = Number(req.params.id);
+  const u = db.prepare('SELECT id, email, name, mobile_number FROM users WHERE id = ?').get(userId);
+  if (!u) return res.status(404).json({ error: 'user not found' });
+  // 10-char alphanumeric password
+  const newPassword = crypto.randomBytes(10).toString('base64').replace(/[+/=]/g, '').slice(0, 10);
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+  res.json({
+    ok: true,
+    user: { id: u.id, email: u.email, name: u.name, mobile_number: u.mobile_number },
+    new_password: newPassword,
+    note: 'Share this password with the user via their KYC-registered phone. They should change it after first login.',
+  });
+});
+
+// ---------- Forgot password (placeholder, no SMTP yet) ----------
+// Logs the request and returns a generic message so we never leak which
+// emails are registered. When SMTP is wired we can swap this to send a
+// reset link/OTP without changing the API shape.
+app.post('/api/auth/forgot-password', (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (email && email.includes('@')) {
+    const user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email);
+    if (user) {
+      console.log(`[forgot-password] request for user_id=${user.id} email=${email}`);
+    }
+  }
+  res.json({
+    ok: true,
+    message: `If an account is registered with that email, ${COMPANY_NAME} support will reach out via your KYC-registered mobile within 24 hours. You can also email support@quantedge.tech with your registered email and mobile number.`,
+  });
 });
 
 // ---------- Admin · Withdrawals ----------
@@ -1603,6 +1588,22 @@ app.delete('/api/admin/backup/:name', authRequired, adminRequired, (req, res) =>
 // ---------- Bot (algo trading simulator) ----------
 const SYMBOLS = ['EUR/USD', 'BTC/USD', 'GOLD', 'ETH/USD', 'GBP/USD', 'NAS100', 'XAU/USD', 'AAPL'];
 const BOT_MIN_PNL = 0.05;
+const COMPANY_NAME = 'QuantEdge';
+
+// Trading days: Monday–Friday only, with ~5% deterministic skips on weekdays.
+// Yields ~20-22 trading days per month — close to the user's requested 20-25
+// "active" days. Identical for every user/server boot — no randomness here.
+function isTradingDay(date = new Date()) {
+  const dow = date.getUTCDay(); // 0=Sun, 6=Sat
+  if (dow === 0 || dow === 6) return false;
+  const dayNum = Math.floor(date.getTime() / 86400000);
+  // Knuth-multiplicative hash → uniform 0..1
+  let h = ((dayNum | 0) * 2654435761 ^ 0x9ABC1234) >>> 0;
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return (h / 4294967296) >= 0.05; // 5% chance to be a "no-trade" weekday
+}
 
 app.get('/api/me/bot/trades', authRequired, (req, res) => {
   const rows = db.prepare(`
@@ -1672,8 +1673,24 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
   const dailyPnl = (user.daily_pnl_date === today) ? Number(user.daily_pnl) : 0;
   const tradeCount = (user.daily_pnl_date === today) ? Number(user.daily_trade_count || 0) : 0;
   const effectiveStart = Math.max(1, Number(user.balance) - dailyPnl);
-
   const targetPnl = +(effectiveStart * PROFIT_DAY_PCT).toFixed(2);
+  const trading = isTradingDay(new Date());
+
+  if (!trading) {
+    return res.json({
+      mode: 'no_trade',
+      is_profit_day: false,
+      target_pct: 0,
+      target_pnl: 0,
+      daily_pnl: 0,
+      day_start_balance: effectiveStart,
+      trades_per_day: TRADES_PER_DAY,
+      daily_trade_count: 0,
+      progress_pct: 0,
+      message: 'Bot is not finding trades — waiting for profitable setups',
+    });
+  }
+
   res.json({
     mode: 'profit',
     is_profit_day: true,
@@ -1688,7 +1705,12 @@ app.get('/api/me/bot/status', authRequired, (req, res) => {
 });
 
 function botTick() {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  // Non-trading day → bot doesn't book anything. The status API surfaces
+  // a "waiting for profitable setups" message to the user.
+  if (!isTradingDay(now)) return;
+
+  const today = now.toISOString().slice(0, 10);
 
   // Only users who haven't been booked today yet — at start-of-day we credit
   // the full PROFIT_DAY_PCT immediately as 2 quick back-to-back trades.

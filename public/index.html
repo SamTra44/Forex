@@ -765,7 +765,10 @@
           <input type="email" name="email" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="you@example.com" />
         </div>
         <div>
-          <label class="block text-xs uppercase tracking-wider text-muted mb-1.5">Password</label>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-xs uppercase tracking-wider text-muted">Password</label>
+            <button type="button" id="btn-open-forgot" class="text-[11px] text-accent hover:underline">Forgot password?</button>
+          </div>
           <input type="password" name="password" required class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" placeholder="••••••••" />
         </div>
         <button type="submit" class="w-full bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm transition">Sign In</button>
@@ -1542,22 +1545,6 @@
     <!-- Tab: Users -->
     <div id="admin-tab-users">
 
-    <!-- Force-book today's 0.7% -->
-    <div class="bg-card border border-line rounded-xl p-5 mb-6">
-      <div class="flex items-start justify-between flex-wrap gap-3">
-        <div class="flex items-start gap-3 flex-1 min-w-0">
-          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-            <svg class="w-5 h-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
-          </div>
-          <div class="min-w-0">
-            <h3 class="font-semibold mb-1">Book Today's 0.7% — All Users</h3>
-            <p class="text-xs text-muted">Books today's daily profit target across every active account right now (instead of waiting for the bot's automatic morning tick). Idempotent — safe to re-run; previous booking is refunded and re-applied so the day's P&amp;L always equals exactly 0.70%.</p>
-          </div>
-        </div>
-        <button id="btn-force-book" class="bg-accent hover:bg-accent/90 text-bg font-semibold px-4 py-2.5 rounded-lg text-sm transition">Book 0.7% Now</button>
-      </div>
-    </div>
-
     <!-- Deposit Address config card -->
     <div class="bg-card border border-line rounded-xl p-5 mb-6">
       <div class="flex items-start justify-between flex-wrap gap-3">
@@ -2068,6 +2055,37 @@
         <button type="button" id="btn-kyc-admin-approve" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Approve</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Forgot Password modal (user-side) -->
+<div id="modal-forgot" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-md w-full">
+    <h3 class="text-lg font-semibold mb-1">Reset your password</h3>
+    <p class="text-sm text-muted mb-4">Enter your registered email. Our support team will verify your KYC mobile number and share a fresh password.</p>
+    <form id="form-forgot" class="space-y-3">
+      <input type="email" name="email" required placeholder="you@example.com" class="w-full bg-bg border border-line rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-accent" />
+      <p id="forgot-result" class="hidden text-[11px] text-accent leading-snug"></p>
+      <div class="flex gap-2">
+        <button type="button" id="btn-forgot-cancel" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Close</button>
+        <button type="submit" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Submit Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Admin Reset Password modal (shows the new generated password ONCE) -->
+<div id="modal-reset-pwd" class="hidden fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">
+  <div class="bg-card border border-line rounded-xl p-6 max-w-md w-full">
+    <h3 class="text-lg font-semibold mb-1">New Password Generated</h3>
+    <p class="text-sm text-muted mb-4">Share this with <span id="reset-pwd-user" class="text-gray-200">—</span> via WhatsApp / SMS to their KYC mobile. Tell them to change it after first login. <span class="text-yellow-400">This password is shown only once.</span></p>
+    <div class="bg-bg border border-accent/30 rounded-lg p-4 mb-4 text-center">
+      <code id="reset-pwd-value" class="text-xl font-mono font-bold text-accent tracking-wider break-all">—</code>
+    </div>
+    <div class="flex gap-2">
+      <button id="btn-reset-pwd-copy" class="flex-1 bg-accent hover:bg-accent/90 text-bg font-semibold py-2.5 rounded-lg text-sm">Copy Password</button>
+      <button id="btn-reset-pwd-close" class="flex-1 bg-bg border border-line py-2.5 rounded-lg text-sm">Close</button>
+    </div>
   </div>
 </div>
 

@@ -57,7 +57,7 @@ function txTypeLabel(t) {
     deposit: { label: 'Deposit', cls: 'text-accent2' },
     withdrawal: { label: 'Withdrawal', cls: 'text-orange-400' },
     referral_bonus: { label: 'Referral Bonus', cls: 'text-accent' },
-    admin_credit: { label: 'Admin Credit', cls: 'text-yellow-400' },
+    admin_credit: { label: 'Credit', cls: 'text-yellow-400' },
     bot_trade: { label: 'Bot Trade', cls: 'text-purple-400' },
     usdt_buy: { label: 'Withdraw → Wallet', cls: 'text-yellow-400' },
     usdt_sell: { label: 'Add Fund', cls: 'text-accent2' },
@@ -68,7 +68,7 @@ function txTypeLabel(t) {
     ref_withdraw: { label: 'Commission Withdraw', cls: 'text-orange-400' },
     bonus_to_trading: { label: 'Bonus → Trading', cls: 'text-accent2' },
     bonus_withdraw: { label: 'Bonus Withdraw', cls: 'text-orange-400' },
-    bonus_credit: { label: 'Admin Bonus Credit', cls: 'text-yellow-400' },
+    bonus_credit: { label: 'Bonus Credit', cls: 'text-yellow-400' },
   }[t] || { label: t, cls: 'text-gray-300' };
 }
 function fmt6(n) {
@@ -275,14 +275,20 @@ async function loadDashboard() {
     const targetPctStr = (targetPctNum * 100).toFixed(2);
     const tradesDone = Number(botStatus.daily_trade_count || 0);
     const tradesPerDay = Number(botStatus.trades_per_day || 2);
+    const isNoTrade = botStatus.mode === 'no_trade';
     const modeBadge = $('bot-mode-badge');
     if (modeBadge) {
-      modeBadge.textContent = `+${targetPctStr}% / day`;
-      modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
+      if (isNoTrade) {
+        modeBadge.textContent = 'WAITING';
+        modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-yellow-400/15 text-yellow-400 font-bold';
+      } else {
+        modeBadge.textContent = `+${targetPctStr}% / day`;
+        modeBadge.className = 'px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent';
+      }
     }
     if ($('bot-target')) {
-      $('bot-target').textContent = '+$' + fmt(Math.abs(targetPnl));
-      $('bot-target').className = 'font-mono text-sm text-accent';
+      $('bot-target').textContent = isNoTrade ? '— waiting —' : '+$' + fmt(Math.abs(targetPnl));
+      $('bot-target').className = 'font-mono text-sm ' + (isNoTrade ? 'text-yellow-400' : 'text-accent');
     }
     if ($('bot-realized')) {
       $('bot-realized').textContent = (pnl >= 0 ? '+' : '-') + '$' + fmt(Math.abs(pnl));
@@ -290,19 +296,40 @@ async function loadDashboard() {
     }
     const barEl = $('bot-target-bar');
     if (barEl) {
-      barEl.style.width = `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
-      barEl.className = 'h-full transition-all bg-accent';
+      barEl.style.width = isNoTrade ? '100%' : `${Math.max(0, Math.min(100, botStatus.progress_pct || 0))}%`;
+      barEl.className = 'h-full transition-all ' + (isNoTrade ? 'bg-yellow-400/40' : 'bg-accent');
     }
 
     // Top stat tile mirror
     if (Number(u.balance) > 0) {
-      $('bot-status-text').textContent = 'Active';
-      $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
-      $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
+      if (isNoTrade) {
+        $('bot-status-text').textContent = 'Waiting';
+        $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-yellow-400';
+        $('bot-status-sub').textContent = 'No profitable setups today';
+      } else {
+        $('bot-status-text').textContent = 'Active';
+        $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-accent';
+        $('bot-status-sub').textContent = `${tradesDone}/${tradesPerDay} trades · +${targetPctStr}%`;
+      }
     } else {
       $('bot-status-text').textContent = 'Armed';
       $('bot-status-text').className = 'text-lg sm:text-xl lg:text-2xl font-bold text-muted';
       $('bot-status-sub').textContent = 'Add fund to begin';
+    }
+
+    // No-trade banner inside Algo Bot panel
+    let noTradeBanner = $('bot-no-trade-banner');
+    const algoPanel = $('bot-mode-badge')?.closest('.bg-card');
+    if (isNoTrade) {
+      if (!noTradeBanner && algoPanel) {
+        noTradeBanner = document.createElement('div');
+        noTradeBanner.id = 'bot-no-trade-banner';
+        noTradeBanner.className = 'mx-5 mb-4 bg-yellow-400/5 border border-yellow-400/30 rounded-lg p-3 text-[11px] text-yellow-400 leading-relaxed flex items-start gap-2';
+        noTradeBanner.innerHTML = `<svg class="w-4 h-4 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span><strong>Bot is not finding trades</strong> — waiting for profitable setups. The engine fires only when ensemble confidence exceeds threshold; today's market reads as noise.</span>`;
+        algoPanel.appendChild(noTradeBanner);
+      }
+    } else if (noTradeBanner) {
+      noTradeBanner.remove();
     }
 
     // Trade history (filtered by period)
@@ -1423,7 +1450,8 @@ async function loadAdmin() {
           <td class="px-5 py-3 pr-5 text-right whitespace-nowrap">
             <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit text-xs px-2.5 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded hover:bg-accent/20 transition mr-1">+USD</button>
             <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-usdt text-xs px-2.5 py-1.5 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 rounded hover:bg-yellow-400/20 transition mr-1">+USDT</button>
-            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-bonus text-xs px-2.5 py-1.5 bg-purple-400/10 text-purple-400 border border-purple-400/30 rounded hover:bg-purple-400/20 transition">+Bonus</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-credit-bonus text-xs px-2.5 py-1.5 bg-purple-400/10 text-purple-400 border border-purple-400/30 rounded hover:bg-purple-400/20 transition mr-1">+Bonus</button>
+            <button data-id="${x.id}" data-label="${escapeHtml(x.email)}" class="btn-reset-pwd text-xs px-2.5 py-1.5 bg-orange-400/10 text-orange-400 border border-orange-400/30 rounded hover:bg-orange-400/20 transition">Reset Pwd</button>
           </td>
         `;
         ubody.appendChild(tr);
@@ -1436,6 +1464,9 @@ async function loadAdmin() {
       });
       ubody.querySelectorAll('.btn-credit-bonus').forEach(b => {
         b.addEventListener('click', () => openCreditModal(b.dataset.id, b.dataset.label, 'bonus'));
+      });
+      ubody.querySelectorAll('.btn-reset-pwd').forEach(b => {
+        b.addEventListener('click', () => openResetPasswordFlow(b.dataset.id, b.dataset.label));
       });
     }
 
@@ -1467,23 +1498,6 @@ async function loadAdmin() {
 
 $('btn-refresh-admin').addEventListener('click', loadAdmin);
 
-// "Book Today Now" — force-fire today's 0.7% for everyone
-document.addEventListener('click', async (e) => {
-  if (e.target?.id !== 'btn-force-book') return;
-  if (!confirm('Book today\'s 0.7% target for ALL active users right now? Existing bookings (if any) will be refunded and re-applied.')) return;
-  e.target.disabled = true;
-  e.target.textContent = 'Booking…';
-  try {
-    const r = await API.req('/api/admin/bot/force-book-today', { method: 'POST' });
-    toast(`Booked $${fmt(r.total_pnl)} across ${r.users_booked} users · ${r.date}`, 'success');
-    loadAdmin();
-  } catch (err) {
-    toast(err.message, 'error');
-  } finally {
-    e.target.disabled = false;
-    e.target.textContent = 'Book 0.7% Now';
-  }
-});
 
 // ---------- Admin · Deposit Address config ----------
 async function loadDepositAddressConfig() {
@@ -2111,6 +2125,53 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('change', (e) => {
   if (e.target && e.target.id === 'kyc-filter') loadAdminKyc();
 });
+
+// ---------- Forgot password (user) + Admin reset-password ----------
+document.addEventListener('click', (e) => {
+  if (!e.target) return;
+  if (e.target.id === 'btn-open-forgot') {
+    $('form-forgot').reset();
+    $('forgot-result')?.classList.add('hidden');
+    $('modal-forgot').classList.remove('hidden');
+  }
+  if (e.target.id === 'btn-forgot-cancel') $('modal-forgot').classList.add('hidden');
+  if (e.target.id === 'btn-reset-pwd-close') $('modal-reset-pwd').classList.add('hidden');
+  if (e.target.id === 'btn-reset-pwd-copy') {
+    const pwd = $('reset-pwd-value')?.textContent || '';
+    if (!pwd || pwd === '—') return;
+    navigator.clipboard.writeText(pwd)
+      .then(() => toast('Password copied', 'success'))
+      .catch(() => toast('Copy failed', 'error'));
+  }
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target?.id === 'form-forgot') {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    try {
+      const r = await API.req('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: fd.get('email') }),
+      });
+      const out = $('forgot-result');
+      out.classList.remove('hidden');
+      out.textContent = r.message || 'Request submitted — support will reach out shortly.';
+    } catch (err) { toast(err.message, 'error'); }
+  }
+});
+
+async function openResetPasswordFlow(userId, label) {
+  if (!confirm(`Generate a NEW password for ${label}? The user's current password will stop working immediately. The new password will be shown only once — copy it carefully.`)) return;
+  try {
+    const r = await API.req(`/api/admin/users/${userId}/reset-password`, { method: 'POST' });
+    setText('reset-pwd-user', `${r.user.name || ''} (${r.user.email})${r.user.mobile_number ? ' · ' + r.user.mobile_number : ''}`);
+    setText('reset-pwd-value', r.new_password);
+    $('modal-reset-pwd').classList.remove('hidden');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
 
 // ---------- Util ----------
 function escapeHtml(s) {
