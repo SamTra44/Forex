@@ -227,7 +227,7 @@ def build():
 
     flow = [
         ('1.  Sign up & KYC',
-         'User signs up with email + optional referral code, uploads Aadhar, PAN and a selfie. Admin approves within 24 hrs.'),
+         'User signs up with email + optional referral code, uploads a government photo ID, proof of address and a selfie. Admin approves within 24 hrs.'),
         ('2.  Deposit USDT (TRC-20)',
          'User sends USDT from any exchange (Binance, OKX, etc.) to the platform’s configured TRC-20 address and uploads a screenshot proof.'),
         ('3.  Admin verifies & credits',
@@ -426,7 +426,7 @@ def build():
         panel('User-side controls', [
             Paragraph('JWT-signed sessions with rotation', S['Body']),
             Paragraph('bcrypt password hashing', S['Body']),
-            Paragraph('KYC: Aadhar + PAN + Selfie review by admin', S['Body']),
+            Paragraph('KYC: Photo ID + proof of address + selfie review by admin', S['Body']),
             Paragraph('Withdrawals locked behind <b>KYC-approved</b> status', S['Body']),
             Paragraph('Mobile number captured during KYC for support', S['Body']),
         ], color=ACCENT),
@@ -459,7 +459,7 @@ def build():
         ('Min deposit', '$50',   'TRC-20 USDT',         ACCENT),
         ('First payout','24 hr', 'after admin verify',  YELLOW),
         ('Daily ROI',   '0.70%', 'compounding',         ACCENT2),
-        ('KYC',         '24 hr', 'Aadhar + PAN + selfie', ACCENT),
+        ('KYC',         '24 hr', 'Photo ID + selfie',     ACCENT),
     ]))
 
     story.append(Spacer(1, 14*mm))

@@ -604,8 +604,8 @@ function validKycImage(s) {
 
 app.post('/api/me/kyc', authRequired, (req, res) => {
   const { aadhar, pan, selfie, mobile_number } = req.body || {};
-  if (!validKycImage(aadhar)) return res.status(400).json({ error: 'invalid Aadhar image (PNG/JPG, ≤ 600 KB)' });
-  if (!validKycImage(pan)) return res.status(400).json({ error: 'invalid PAN image (PNG/JPG, ≤ 600 KB)' });
+  if (!validKycImage(aadhar)) return res.status(400).json({ error: 'invalid photo ID image (PNG/JPG, ≤ 600 KB)' });
+  if (!validKycImage(pan)) return res.status(400).json({ error: 'invalid address proof image (PNG/JPG, ≤ 600 KB)' });
   if (!validKycImage(selfie)) return res.status(400).json({ error: 'invalid selfie image (PNG/JPG, ≤ 600 KB)' });
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
